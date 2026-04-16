@@ -1,0 +1,64 @@
+name: Ether
+options:
+  bundleIdPrefix: audio.ether
+  deploymentTarget:
+    macOS: "14.0"
+
+targets:
+  # ─── Swift App ────────────────────────────────────────
+  Ether:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: Assets/Ether.icns
+      - path: Assets/Fonts
+        buildPhase: resources
+    settings:
+      base:
+        SWIFT_VERSION: "5"
+        PRODUCT_BUNDLE_IDENTIFIER: audio.ether.app
+        PRODUCT_NAME: Ether
+        MARKETING_VERSION: "1.1.2"
+        CURRENT_PROJECT_VERSION: "6"
+        CODE_SIGN_ENTITLEMENTS: Ether.entitlements
+      configs:
+        Release:
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Ether
+        CFBundleIconFile: Ether
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSUIElement: false
+        NSMicrophoneUsageDescription: "Ether reads system audio from the BlackHole virtual audio device to apply EQ processing."
+        NSAppleEventsUsageDescription: "Ether reads now-playing info from Spotify and Music to display album art and track info in the mini player."
+        ATSApplicationFontsPath: "Fonts/"
+
+  # ─── C++ AudioServerPlugIn Driver ─────────────────────
+  EtherDriver:
+    type: bundle
+    platform: macOS
+    sources:
+      - path: Driver
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: audio.ether.driver
+        PRODUCT_NAME: EtherDriver
+        WRAPPER_EXTENSION: driver
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        CLANG_CXX_LIBRARY: libc++
+        GCC_SYMBOLS_PRIVATE_EXTERN: YES
+        SKIP_INSTALL: NO
+        INSTALL_PATH: /Library/Audio/Plug-Ins/HAL
+        MARKETING_VERSION: "1.1.2"
+        CURRENT_PROJECT_VERSION: "6"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Driver/Info.plist
+    dependencies:
+      - framework: CoreFoundation.framework
+      - framework: CoreAudio.framework
