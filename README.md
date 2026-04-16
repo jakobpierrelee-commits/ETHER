@@ -4,69 +4,80 @@ A macOS system-wide audio equalizer. Routes your system audio through a lossless
 
 Built for people who care about how their music, podcasts, and video calls actually sound — with the visual language of a pro EQ plugin and the ergonomics of a Mac utility.
 
-<img width="820" alt="Ether main window" src="docs/screenshot.png" />
-
 ---
 
 ## What it does
 
 - **10-band parametric EQ** — Low Cut / Low Shelf / Bell / High Shelf / High Cut / Notch filter types. ±24 dB range, 0.1–20 Q.
 - **32-bit float, 48 kHz, lossless path** — no downsampling, no bit-depth reduction.
-- **Real-time visualization** — smooth Ozone-style curve with per-band colors, ghost input spectrum, pre/post toggle, dedicated peak meter, and a draggable info card on hover.
-- **Character knobs** — one-turn macros for Bass, Warmth, Clarity, Presence, and Air when you don't want to think in bands.
+- **Real-time visualization** — smooth curve with per-band colors, ghost spectrum, technical grid, peak meter, and hover info cards.
+- **Character knobs** — one-turn macros for Bass, Warmth, Clarity, Presence, and Air. Knob arcs are color-linked to their EQ band handles — hover a knob and its bands glow on the canvas, and vice versa.
 - **AI Suggest** — rule-based tonal analyzer that listens to what's playing and proposes gentle corrections with reasoning.
-- **Profiles** — save, load, rename, delete. A/B two slots and flip between them with `X`.
+- **Reference Match** — load any audio file and Ether matches its tonal balance.
+- **Dehiss** — simple downward expander + high-shelf cut above a configurable pivot. Ducks hiss when the high band goes quiet.
+- **Spatial processing** — stereo width, bass mono, crossfeed, virtual speakers, polarity flip, mono check, reverb.
+- **LUFS metering** — BS.1770 momentary, short-term, integrated, and true peak in the Advanced window.
+- **6 color themes** — Clinical, Neon, Thermal, Mono, Ember, Arctic. Independent EQ curve color. All in Display P3.
+- **Profiles** — save, load, rename, delete. A/B two slots and flip between them with `X`. Preset sidebar with inline save and hover-to-overwrite.
+- **Mini player** — always-on-top floating panel with Spotify/Music album art, media controls (play/pause/next/prev), and an ethereal waveform visualization tinted by the album's dominant color.
 - **Menu bar mode** — compact popover with the essentials. Main window can close; the app stays alive in the menu bar.
-- **Auto device routing** — switches system output to BlackHole on Start, restores it on Stop (even on crash or force-quit).
+- **Global hotkeys** — ⌘⌥B bypass, ⌘⌥X A/B toggle. Work even when Ether isn't focused.
+- **Auto device routing** — switches system output to BlackHole on Start, restores on Stop. Remembers your output device across restarts.
 - **Launch at login** — optional, via `SMAppService`.
 
 ---
 
 ## Requirements
 
-- **macOS 14** or later (uses the `onContinuousHover` API)
-- **Xcode 15+** to build
+- **macOS 14** or later
 - **[BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole)** installed — Ether reads system audio from this virtual driver
 - **[xcodegen](https://github.com/yonaskolb/XcodeGen)** to generate the Xcode project (`brew install xcodegen`)
 
 ---
 
-## Install & build
+## Install
+
+### From DMG (recommended)
+
+Download the latest `.dmg` from Releases. Open it, drag Ether to Applications. On first launch macOS will ask for microphone permission (to read from BlackHole — it's a virtual device, not your mic).
+
+### Build from source
 
 ```bash
-# Install the audio driver (required)
-brew install blackhole-2ch
-
-# Build Ether
-brew install xcodegen
-git clone https://github.com/jakobpierrelee-commits/ether.eq.git
-cd ether.eq
+brew install blackhole-2ch xcodegen
+git clone https://github.com/jakobpierrelee-commits/ETHER.git
+cd ETHER
 xcodegen generate
 open Ether.xcodeproj
-# Build & Run in Xcode, or:
-xcodebuild -scheme Ether -configuration Release build
+# Build & Run in Xcode
 ```
 
-On first launch, macOS will ask for microphone permission (to read from BlackHole — it's a virtual input device, not your mic). Grant it.
+### Build a signed DMG
+
+```bash
+scripts/release.sh 1.2.0
+# Requires: Developer ID cert in Keychain, notarytool credentials stored as "ether-notary"
+```
 
 ---
 
 ## Usage
 
 1. Click **Start** — Ether switches your system output to BlackHole and starts processing.
-2. Pick your real output device (speakers/headphones) from the **Output** dropdown at the top.
+2. Pick your real output device from the **Output** dropdown.
 3. Drag EQ handles to shape the curve, or use the **Character knobs** for quick tonal sculpting.
-4. **Save As** to name and store a profile. Load it later from the dropdown on the bottom-left.
-5. Click **Stop** — system output is restored, processing ends.
+4. Save presets in the left sidebar. Click **+** to create, hover to overwrite, right-click to delete.
+5. Open the **Mini Player** (PiP icon in the header) for a floating always-on-top widget with album art and media controls.
+6. Click **Stop** — system output is restored, processing ends.
 
-### Keyboard shortcuts (press `?` in-app for the full list)
+### Keyboard shortcuts
 
 | Key | Action |
 |---|---|
 | `Space` | Start / Stop |
 | `⌘ B` | Bypass all bands |
 | `⌘ 0` | Reset to flat |
-| `⌘ Z` / `⇧⌘Z` | Undo / Redo (every drag is atomic) |
+| `⌘ Z` / `⇧⌘Z` | Undo / Redo |
 | `X` | Toggle A/B profile slots |
 | Drag handle | Freq + Gain |
 | `⇧` + drag | Axis lock + snap to ISO 1/3-octave |
@@ -74,11 +85,8 @@ On first launch, macOS will ask for microphone permission (to read from BlackHol
 | Scroll on handle | Adjust Q |
 | Double-click handle | Reset that band |
 | Right-click handle | Filter type / bypass / reset |
-| `?` | Show this cheatsheet |
-
-### AI Suggest
-
-Let audio play for ~5 seconds, then click ✨ **AI Suggest** in the EQ header. A rule-based analyzer checks the averaged spectrum against a target tonal balance and proposes up to six small corrections (sub-bass bloat, muddy lower-mids, presence dip, harshness, dull top, etc.) with plain-language reasoning. Preview curve is shown in dashed cyan. Apply or dismiss. Fully undoable.
+| Click canvas background | Deselect band |
+| `?` | Shortcut cheatsheet |
 
 ---
 
@@ -87,29 +95,35 @@ Let audio play for ~5 seconds, then click ✨ **AI Suggest** in the EQ header. A
 ```
 System Audio  →  BlackHole (virtual device)
                   ↓
-                 HAL IOProc  ─→  FloatRingBuffer  ─→  AVAudioSourceNode
-                                                       ↓
-                                                 AVAudioUnitEQ (10-band)
-                                                       ↓
-                                                 mainMixerNode (master gain)
-                                                       ↓
-                                                 Physical Output (your speakers)
+                 HAL IOProc  →  FloatRingBuffer  →  AVAudioSourceNode
+                                                     ↓
+                                               StereoProcessor (inline DSP)
+                                                     ↓
+                                               AVAudioUnitEQ (10-band)
+                                                     ↓
+                                               AVAudioUnitReverb
+                                                     ↓
+                                               mainMixerNode (master gain)
+                                                     ↓
+                                               Physical Output (speakers)
 ```
 
-- **Capture** uses raw Core Audio HAL (`AudioDeviceCreateIOProcID`) instead of AVAudioEngine's input node. Lower latency than the AVAudioEngine input path.
-- **Playback** is a single AVAudioEngine: `AVAudioSourceNode` pulls from the ring buffer, feeds the EQ node, through the mixer, out to the device.
-- **Spectrum** is vDSP 4096-point FFT running on a background queue at 30fps.
-- **Scrolling spectrogram history** lives in a ring grid fed by the same analyzer.
-
-See `Sources/Audio/` for the engine code.
+- **Capture** uses raw Core Audio HAL (`AudioDeviceCreateIOProcID`).
+- **Stereo DSP** runs inline in the render callback — width, bass mono, crossfeed, polarity, dehiss. No allocations on the audio thread.
+- **Playback** is a single AVAudioEngine graph.
+- **Spectrum** is vDSP 4096-point FFT at 30fps.
+- **Mini player** is a programmatic `NSPanel` — truly borderless, no SwiftUI Window scene.
+- **Media integration** uses `osascript` (AppleScript via Process) for Spotify/Music track info and `MediaRemote.framework` for transport commands.
 
 ---
 
 ## Attribution
 
-Audio capture is powered by **[BlackHole](https://github.com/ExistentialAudio/BlackHole)** by Existential Audio (MIT). Ether would not be possible without it.
+Audio capture powered by **[BlackHole](https://github.com/ExistentialAudio/BlackHole)** by Existential Audio (MIT).
 
-UI inspired by FabFilter Pro-Q, iZotope Ozone/Neutron, and Slate Infinity EQ.
+UI inspired by FabFilter Pro-Q, iZotope Ozone, Slate Infinity EQ, and Astro Mono.
+
+Font: [Space Mono](https://fonts.google.com/specimen/Space+Mono) by Colophon Foundry (OFL).
 
 ---
 
