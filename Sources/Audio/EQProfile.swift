@@ -133,30 +133,17 @@ final class ProfileStore: ObservableObject {
     func overwriteCurrent(bands: [EQBand], masterGain: Float, knobValues: [String: Float] = [:]) {
         guard let id = currentProfileID,
               let index = profiles.firstIndex(where: { $0.id == id }) else { return }
-        profiles[index].bands = bands.map {
-            EQProfile.SavedBand(
-                frequency: $0.frequency,
-                gain: $0.gain,
-                q: $0.q,
-                type: $0.type.rawValue,
-                bypassed: $0.bypassed
-            )
-        }
-        profiles[index].masterGain = masterGain
-        profiles[index].knobValues = knobValues.isEmpty ? nil : knobValues
-        save()
+        updateProfile(at: index, bands: bands, masterGain: masterGain, knobValues: knobValues)
     }
 
     func overwriteProfile(_ profile: EQProfile, bands: [EQBand], masterGain: Float, knobValues: [String: Float] = [:]) {
         guard let index = profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+        updateProfile(at: index, bands: bands, masterGain: masterGain, knobValues: knobValues)
+    }
+
+    private func updateProfile(at index: Int, bands: [EQBand], masterGain: Float, knobValues: [String: Float]) {
         profiles[index].bands = bands.map {
-            EQProfile.SavedBand(
-                frequency: $0.frequency,
-                gain: $0.gain,
-                q: $0.q,
-                type: $0.type.rawValue,
-                bypassed: $0.bypassed
-            )
+            EQProfile.SavedBand(frequency: $0.frequency, gain: $0.gain, q: $0.q, type: $0.type.rawValue, bypassed: $0.bypassed)
         }
         profiles[index].masterGain = masterGain
         profiles[index].knobValues = knobValues.isEmpty ? nil : knobValues

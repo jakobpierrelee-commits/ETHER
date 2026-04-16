@@ -1,6 +1,21 @@
 import AppKit
 import Combine
 
+private extension URLSession {
+    func synchronousData(for request: URLRequest) throws -> (Data, URLResponse) {
+        var result: Result<(Data, URLResponse), Error>?
+        let semaphore = DispatchSemaphore(value: 0)
+        dataTask(with: request) { data, response, error in
+            if let error { result = .failure(error) }
+            else if let data, let response { result = .success((data, response)) }
+            else { result = .failure(URLError(.unknown)) }
+            semaphore.signal()
+        }.resume()
+        semaphore.wait()
+        return try result!.get()
+    }
+}
+
 final class NowPlayingManager: ObservableObject {
     @Published var title: String = ""
     @Published var artist: String = ""
@@ -92,8 +107,10 @@ final class NowPlayingManager: ObservableObject {
               !urlString.isEmpty,
               let url = URL(string: urlString) else { return nil }
 
-        // Synchronous fetch (we're already on background queue)
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        // Synchronous fetch with timeout (we're on a background queue)
+        var request = URLRequest(url: url, timeoutInterval: 5)
+        request.cachePolicy = .returnCacheDataElseLoad
+        guard let (data, _) = try? URLSession.shared.synchronousData(for: request) else { return nil }
         return NSImage(data: data)
     }
 

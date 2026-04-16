@@ -160,9 +160,7 @@ final class EngineManager: ObservableObject {
     /// Used to recover if the app crashes while routed to BlackHole.
     private let lastGoodOutputKey = "audio.ether.lastGoodOutputUID"
 
-    private let defaultFrequencies: [Float] = [
-        32, 64, 125, 250, 500, 1_000, 2_000, 4_000, 8_000, 16_000
-    ]
+    private var defaultFrequencies: [Float] { EQController.defaultFrequencies }
 
     init() {
         driverInstalled = DriverCommunicator.isDriverInstalled
@@ -611,17 +609,6 @@ final class EngineManager: ObservableObject {
             auBand.bypass = band.bypassed || bypassed
         }
         outputEngine?.mainMixerNode.outputVolume = pow(10, masterGain / 20)
-    }
-
-    private func convert(_ source: AVAudioPCMBuffer, to targetFormat: AVAudioFormat) -> AVAudioPCMBuffer? {
-        guard let converter = AVAudioConverter(from: source.format, to: targetFormat),
-              let output = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: source.frameLength) else { return nil }
-        var error: NSError?
-        let status = converter.convert(to: output, error: &error) { _, outStatus in
-            outStatus.pointee = .haveData
-            return source
-        }
-        return status == .haveData ? output : nil
     }
 
     private func setDevice(_ deviceID: AudioDeviceID, on audioUnit: AudioUnit, label: String) throws {
