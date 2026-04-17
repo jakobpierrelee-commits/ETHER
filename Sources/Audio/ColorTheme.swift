@@ -1,12 +1,12 @@
 import SwiftUI
 
 enum ColorThemeID: String, CaseIterable, Identifiable {
-    case clinical  = "Clinical"
-    case neon      = "Neon"
-    case thermal   = "Thermal"
-    case monochrome = "Mono"
-    case ember     = "Ember"
-    case arctic    = "Arctic"
+    case clinical   = "Clinical"
+    case violet     = "Violet"
+    case thermal    = "Thermal"
+    case mono       = "Mono"
+    case ember      = "Ember"
+    case tidal      = "Tidal"
 
     var id: String { rawValue }
 }
@@ -18,99 +18,105 @@ struct ColorTheme {
     static func theme(for id: ColorThemeID) -> ColorTheme {
         switch id {
         case .clinical:
+            // Refined instrument look — deep blue through neutral to warm red
             return ColorTheme(
-                accent: Color.p3(0.95, 0.08, 0.08),
+                accent: Color.p3(0.92, 0.12, 0.12),
                 bandColors: [
-                    Color.p3(0.20, 0.30, 0.95),
-                    Color.p3(0.25, 0.50, 0.95),
-                    Color.p3(0.30, 0.65, 0.90),
-                    Color.p3(0.45, 0.78, 0.85),
-                    Color.p3(0.70, 0.82, 0.82),
-                    Color.p3(0.85, 0.80, 0.72),
-                    Color.p3(0.90, 0.65, 0.50),
-                    Color.p3(0.92, 0.45, 0.35),
-                    Color.p3(0.95, 0.22, 0.18),
-                    Color.p3(0.90, 0.10, 0.25),
+                    Color.p3(0.15, 0.25, 0.90),
+                    Color.p3(0.18, 0.45, 0.92),
+                    Color.p3(0.22, 0.62, 0.88),
+                    Color.p3(0.35, 0.75, 0.78),
+                    Color.p3(0.55, 0.78, 0.68),
+                    Color.p3(0.75, 0.72, 0.52),
+                    Color.p3(0.88, 0.58, 0.35),
+                    Color.p3(0.92, 0.40, 0.22),
+                    Color.p3(0.92, 0.20, 0.15),
+                    Color.p3(0.85, 0.10, 0.18),
                 ]
             )
-        case .neon:
+        case .violet:
+            // Stage lights — deep indigo through electric purple to hot magenta
             return ColorTheme(
-                accent: Color.p3(0.00, 0.92, 1.00),
+                accent: Color.p3(0.40, 0.42, 1.00),
                 bandColors: [
-                    Color.p3(0.30, 0.20, 1.00),
-                    Color.p3(0.10, 0.45, 1.00),
-                    Color.p3(0.00, 0.80, 0.95),
-                    Color.p3(0.00, 0.95, 0.65),
-                    Color.p3(0.35, 1.00, 0.20),
-                    Color.p3(0.80, 1.00, 0.00),
-                    Color.p3(1.00, 0.80, 0.00),
-                    Color.p3(1.00, 0.50, 0.00),
-                    Color.p3(1.00, 0.18, 0.10),
-                    Color.p3(1.00, 0.10, 0.60),
+                    Color.p3(0.18, 0.08, 0.55),
+                    Color.p3(0.30, 0.10, 0.75),
+                    Color.p3(0.45, 0.15, 0.90),
+                    Color.p3(0.60, 0.20, 0.95),
+                    Color.p3(0.75, 0.28, 0.92),
+                    Color.p3(0.88, 0.22, 0.78),
+                    Color.p3(0.95, 0.18, 0.58),
+                    Color.p3(1.00, 0.25, 0.42),
+                    Color.p3(1.00, 0.35, 0.50),
+                    Color.p3(0.95, 0.45, 0.65),
                 ]
             )
         case .thermal:
+            // True FLIR — dark indigo to white-hot, no green gap
             return ColorTheme(
                 accent: Color.p3(1.00, 0.55, 0.00),
                 bandColors: [
-                    Color.p3(0.05, 0.10, 0.50),
-                    Color.p3(0.10, 0.15, 0.75),
-                    Color.p3(0.15, 0.35, 0.90),
-                    Color.p3(0.10, 0.70, 0.60),
-                    Color.p3(0.20, 0.90, 0.30),
-                    Color.p3(0.65, 0.95, 0.10),
-                    Color.p3(1.00, 0.90, 0.00),
-                    Color.p3(1.00, 0.60, 0.00),
-                    Color.p3(1.00, 0.25, 0.00),
-                    Color.p3(0.90, 0.05, 0.05),
+                    Color.p3(0.04, 0.02, 0.22),
+                    Color.p3(0.12, 0.05, 0.50),
+                    Color.p3(0.30, 0.05, 0.65),
+                    Color.p3(0.55, 0.05, 0.60),
+                    Color.p3(0.80, 0.10, 0.35),
+                    Color.p3(0.95, 0.25, 0.10),
+                    Color.p3(1.00, 0.50, 0.00),
+                    Color.p3(1.00, 0.72, 0.00),
+                    Color.p3(1.00, 0.88, 0.40),
+                    Color.p3(1.00, 0.97, 0.80),
                 ]
             )
-        case .monochrome:
+        case .mono:
+            // Warm filament — off-white with subtle warmth, not dead gray
             return ColorTheme(
-                accent: Color.white,
+                accent: Color.p3(0.95, 0.90, 0.82),
                 bandColors: [
-                    Color(white: 0.35),
-                    Color(white: 0.42),
-                    Color(white: 0.50),
-                    Color(white: 0.58),
-                    Color(white: 0.65),
-                    Color(white: 0.72),
-                    Color(white: 0.78),
-                    Color(white: 0.85),
-                    Color(white: 0.90),
-                    Color(white: 0.95),
+                    Color.p3(0.32, 0.30, 0.28),
+                    Color.p3(0.40, 0.38, 0.35),
+                    Color.p3(0.50, 0.48, 0.44),
+                    Color.p3(0.58, 0.56, 0.52),
+                    Color.p3(0.66, 0.64, 0.60),
+                    Color.p3(0.74, 0.72, 0.68),
+                    Color.p3(0.82, 0.80, 0.76),
+                    Color.p3(0.88, 0.86, 0.82),
+                    Color.p3(0.93, 0.91, 0.86),
+                    Color.p3(0.97, 0.95, 0.90),
                 ]
             )
         case .ember:
+            // True fire — deep burgundy through crimson, orange, to molten gold
             return ColorTheme(
-                accent: Color.p3(1.00, 0.35, 0.10),
+                accent: Color.p3(1.00, 0.42, 0.08),
                 bandColors: [
-                    Color.p3(0.30, 0.05, 0.10),
-                    Color.p3(0.50, 0.08, 0.12),
-                    Color.p3(0.70, 0.12, 0.10),
-                    Color.p3(0.85, 0.20, 0.08),
-                    Color.p3(0.95, 0.35, 0.08),
-                    Color.p3(1.00, 0.50, 0.10),
-                    Color.p3(1.00, 0.65, 0.15),
-                    Color.p3(1.00, 0.78, 0.25),
-                    Color.p3(0.95, 0.40, 0.55),
-                    Color.p3(0.85, 0.20, 0.60),
+                    Color.p3(0.25, 0.02, 0.05),
+                    Color.p3(0.42, 0.04, 0.06),
+                    Color.p3(0.62, 0.08, 0.05),
+                    Color.p3(0.80, 0.15, 0.04),
+                    Color.p3(0.92, 0.28, 0.04),
+                    Color.p3(1.00, 0.42, 0.06),
+                    Color.p3(1.00, 0.58, 0.08),
+                    Color.p3(1.00, 0.72, 0.12),
+                    Color.p3(1.00, 0.82, 0.25),
+                    Color.p3(1.00, 0.90, 0.45),
                 ]
             )
-        case .arctic:
+        case .tidal:
+            // Ocean depth — dark navy through steel blue to pale gold
             return ColorTheme(
-                accent: Color.p3(0.30, 0.70, 1.00),
+                accent: Color.p3(0.30, 0.62, 0.92),
                 bandColors: [
-                    Color.p3(0.10, 0.20, 0.55),
-                    Color.p3(0.12, 0.35, 0.75),
-                    Color.p3(0.15, 0.50, 0.90),
-                    Color.p3(0.20, 0.65, 0.95),
-                    Color.p3(0.30, 0.80, 1.00),
-                    Color.p3(0.50, 0.88, 1.00),
-                    Color.p3(0.70, 0.92, 1.00),
-                    Color.p3(0.85, 0.95, 1.00),
-                    Color.p3(0.92, 0.97, 1.00),
-                    Color.p3(0.98, 0.99, 1.00),
+                    Color.p3(0.04, 0.08, 0.28),
+                    Color.p3(0.06, 0.15, 0.45),
+                    Color.p3(0.08, 0.28, 0.62),
+                    Color.p3(0.12, 0.42, 0.78),
+                    Color.p3(0.20, 0.55, 0.88),
+                    Color.p3(0.35, 0.68, 0.90),
+                    Color.p3(0.52, 0.75, 0.88),
+                    Color.p3(0.70, 0.78, 0.80),
+                    Color.p3(0.85, 0.80, 0.68),
+                    Color.p3(0.92, 0.82, 0.58),
                 ]
             )
         }
@@ -120,7 +126,7 @@ struct ColorTheme {
 enum CurveColorMode: String, CaseIterable, Identifiable {
     case matchTheme = "Match Theme"
     case white      = "White"
-    case neon       = "Neon Rainbow"
+    case violet     = "Violet"
     case thermal    = "Thermal"
 
     var id: String { rawValue }
@@ -129,22 +135,8 @@ enum CurveColorMode: String, CaseIterable, Identifiable {
         switch self {
         case .matchTheme: return nil
         case .white:      return (0..<10).map { _ in Color.white }
-        case .neon:
-            return [
-                Color.p3(0.30, 0.20, 1.00), Color.p3(0.10, 0.45, 1.00),
-                Color.p3(0.00, 0.80, 0.95), Color.p3(0.00, 0.95, 0.65),
-                Color.p3(0.35, 1.00, 0.20), Color.p3(0.80, 1.00, 0.00),
-                Color.p3(1.00, 0.80, 0.00), Color.p3(1.00, 0.50, 0.00),
-                Color.p3(1.00, 0.18, 0.10), Color.p3(1.00, 0.10, 0.60),
-            ]
-        case .thermal:
-            return [
-                Color.p3(0.05, 0.10, 0.50), Color.p3(0.10, 0.15, 0.75),
-                Color.p3(0.15, 0.35, 0.90), Color.p3(0.10, 0.70, 0.60),
-                Color.p3(0.20, 0.90, 0.30), Color.p3(0.65, 0.95, 0.10),
-                Color.p3(1.00, 0.90, 0.00), Color.p3(1.00, 0.60, 0.00),
-                Color.p3(1.00, 0.25, 0.00), Color.p3(0.90, 0.05, 0.05),
-            ]
+        case .violet:     return ColorTheme.theme(for: .violet).bandColors
+        case .thermal:    return ColorTheme.theme(for: .thermal).bandColors
         }
     }
 }

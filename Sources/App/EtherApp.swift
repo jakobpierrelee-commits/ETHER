@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Sparkle
 
 @main
 struct EtherApp: App {
@@ -41,11 +42,16 @@ struct EtherApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    appDelegate.updaterController.checkForUpdates(nil)
+                }
+            }
             CommandGroup(replacing: .appInfo) {
                 Button("About Ether") {
                     let alert = NSAlert()
                     alert.messageText = "Ether"
-                    alert.informativeText = "System Audio Equalizer\n\nv\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")\n\nAudio capture by BlackHole\nhttps://github.com/ExistentialAudio/BlackHole"
+                    alert.informativeText = "System Audio Equalizer\n\nv\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")\n\nBuilt on Core Audio HAL\nhttps://github.com/jakobpierrelee-commits/ether.eq"
                     alert.runModal()
                 }
             }
@@ -95,6 +101,14 @@ struct EtherApp: App {
         .defaultSize(width: 720, height: 720)
         .windowResizability(.contentSize)
 
+        // ── Visualizer (fullscreen-capable) ───────────────────────────────
+        Window("Ether — Visualizer", id: "visualizer") {
+            VisualizerView()
+                .environmentObject(engineManager)
+        }
+        .defaultSize(width: 900, height: 600)
+        .windowStyle(.hiddenTitleBar)
+
         // ── Menu bar popover ────────────────────────────────────────────
         MenuBarExtra("Ether", systemImage: "waveform") {
             MenuBarContent(controller: eqController, profileStore: profileStore)
@@ -104,7 +118,7 @@ struct EtherApp: App {
 
         // ── Settings ────────────────────────────────────────────────────
         Settings {
-            PreferencesView(launchAtLogin: launchAtLogin)
+            PreferencesView(launchAtLogin: launchAtLogin, hotkeys: globalHotkeys)
                 .environmentObject(engineManager)
         }
     }
@@ -114,6 +128,11 @@ struct EtherApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var engineManager: EngineManager?
+    let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     func applicationWillTerminate(_ notification: Notification) {
         engineManager?.emergencyRestore()

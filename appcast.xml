@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>Ether</title>
+        <link>https://github.com/jakobpierrelee-commits/ether.eq</link>
+        <description>Ether release feed</description>
+        <language>en</language>
+
+        <item>
+            <title>Version 1.1.4</title>
+            <pubDate>Thu, 17 Apr 2026 00:00:00 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/jakobpierrelee-commits/ether.eq/releases/tag/v1.1.4</sparkle:releaseNotesLink>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>1.1.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/jakobpierrelee-commits/ether.eq/releases/download/v1.1.4/Ether-1.1.4.dmg"
+                sparkle:edSignature="Qj7uAQ0NfpS+reXDpSVTb5WP6tUxcNCAFEMGe1RLQdFONx2/vsc/Mg6TYNNc3h2sljV8K/zX62Sd/q5p9043DQ=="
+                length="2897891"
+                type="application/octet-stream"/>
+        </item>
+
+    </channel>
+</rss>

@@ -21,9 +21,6 @@
     <key>CFBundleSignature</key>
     <string>????</string>
 
-    <key>AudioServerPlugIn_Network</key>
-    <true/>
-
     <key>CFPlugInFactories</key>
     <dict>
         <key>4F1E6C00-E7B3-11EF-B864-0242AC120002</key>
@@ -32,7 +29,9 @@
     <key>CFPlugInTypes</key>
     <dict>
         <key>443ABAB8-E7B3-491A-B985-BEB9187030DB</key>
-        <string>4F1E6C00-E7B3-11EF-B864-0242AC120002</string>
+        <array>
+            <string>4F1E6C00-E7B3-11EF-B864-0242AC120002</string>
+        </array>
     </dict>
 </dict>
 </plist>

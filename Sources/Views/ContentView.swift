@@ -22,37 +22,81 @@ struct ContentView: View {
                     .frame(width: 150)
 
                 Rectangle()
-                    .fill(Color.white.opacity(0.04))
+                    .fill(
+                        LinearGradient(
+                            colors: [.white.opacity(0.0), .white.opacity(0.06), .white.opacity(0.0)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
                     .frame(width: 1)
 
                 // Main content
-                VStack(spacing: 12) {
+                VStack(spacing: 0) {
                     if !engine.driverInstalled {
                         driverWarning
+                            .padding(.horizontal, 20)
+                            .padding(.top, 12)
                     }
                     deviceRouting
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
 
-                    HStack(alignment: .top, spacing: 10) {
-                        EQBandsView(controller: eqController)
-                            .frame(maxWidth: .infinity)
-                        PeakMeterSide(analyzer: engine.postSpectrum)
-                            .frame(width: 36, height: 280)
-                            .padding(.top, 24)
+                    Spacer().frame(height: 10)
+
+                    // EQ hero zone — no panel, ambient glow behind
+                    ZStack {
+                        // Ambient accent glow behind graph
+                        RadialGradient(
+                            colors: [Color.etherAccent.opacity(0.035), .clear],
+                            center: .center,
+                            startRadius: 20,
+                            endRadius: 340
+                        )
+                        .frame(height: 360)
+                        .allowsHitTesting(false)
+
+                        HStack(alignment: .top, spacing: 10) {
+                            EQBandsView(controller: eqController)
+                                .frame(maxWidth: .infinity)
+                            PeakMeterSide(analyzer: engine.postSpectrum)
+                                .frame(width: 36, height: 320)
+                                .padding(.top, 24)
+                        }
                     }
+                    .padding(.horizontal, 20)
 
                     BandDetailStrip(controller: eqController)
+                        .padding(.horizontal, 20)
+
+                    Spacer().frame(height: 20)
+
+                    // Controls zone — knobs + spatial
                     MacroKnobsView(controller: eqController)
+                        .padding(.horizontal, 20)
+
+                    Spacer().frame(height: 10)
+
                     SpatialView(spatial: engine.spatial)
+                        .padding(.horizontal, 20)
+
+                    Spacer().frame(height: 18)
+
+                    // Output zone
                     MasterGainStrip(controller: eqController)
+                        .padding(.horizontal, 20)
+
+                    Spacer().frame(height: 10)
 
                     HStack(spacing: 12) {
                         ABSlotsBar(store: profileStore, eqController: eqController)
                             .frame(maxWidth: .infinity)
                         transportButton
                     }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 14)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.vertical, 0)
             }
         }
         .background(Color.etherBackground)
@@ -103,6 +147,28 @@ struct ContentView: View {
 
     private var presetSidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Brand
+            HStack(spacing: 0) {
+                Spacer()
+                ZStack {
+                    Text("ETHER")
+                        .font(.etherVariant(EtherType.medium))
+                        .tracking(3.0)
+                        .foregroundColor(.etherAccent.opacity(0.35))
+                        .blur(radius: 6)
+                    Text("ETHER")
+                        .font(.etherVariant(EtherType.medium))
+                        .tracking(3.0)
+                        .foregroundColor(.etherAccent)
+                }
+                Spacer()
+            }
+            .padding(.vertical, 8)
+
+            Rectangle()
+                .fill(Color.white.opacity(0.04))
+                .frame(height: 1)
+
             HStack {
                 Text("PRESETS")
                     .font(.etherMono(EtherType.micro, weight: .semibold))
@@ -136,7 +202,7 @@ struct ContentView: View {
 
             Spacer()
         }
-        .background(Color.etherBackground.opacity(0.6))
+        .background(Color(hex: 0x060606))
         .sheet(isPresented: $showingSaveSheet) {
             VStack(alignment: .leading, spacing: 16) {
                 Text("SAVE PRESET")
@@ -314,12 +380,7 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
-            Spacer().frame(width: 72)
-
-            Text("ETHER")
-                .font(.etherVariant(EtherType.title))
-                .tracking(2.0)
-                .foregroundColor(.etherAccent)
+            Spacer().frame(width: 58)
 
             Spacer()
 
@@ -333,62 +394,71 @@ struct ContentView: View {
             Text("·").foregroundColor(.etherTextTertiary)
 
             Text("48 kHz · 512 · 10.7 ms")
-                .font(.etherMono(9))
+                .font(.etherValue(9))
                 .foregroundColor(.etherTextTertiary)
                 .monospacedDigit()
 
-            // Mini player
-            Button {
-                MiniPlayerPanel.shared.show(controller: eqController, profileStore: profileStore, engine: engine)
-            } label: {
-                Image(systemName: "pip")
-                    .font(.system(size: 11))
-                    .foregroundColor(.etherTextSecondary)
-            }
-            .buttonStyle(.plain)
-            .help("Open Mini Player (always on top)")
+            // Utility icons grouped in a pill
+            HStack(spacing: 10) {
+                Button {
+                    MiniPlayerPanel.shared.show(controller: eqController, profileStore: profileStore, engine: engine)
+                } label: {
+                    Image(systemName: "pip")
+                        .font(.system(size: 11))
+                        .foregroundColor(.etherTextSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("Mini Player")
 
-            // Advanced window button
-            Button {
-                openWindow(id: "advanced")
-            } label: {
-                Image(systemName: "slider.horizontal.below.square.filled.and.square")
-                    .font(.system(size: 11))
-                    .foregroundColor(.etherTextSecondary)
-            }
-            .buttonStyle(.plain)
-            .help("Open Advanced window")
+                Button {
+                    WideMiniPlayerPanel.shared.show(controller: eqController, engine: engine)
+                } label: {
+                    Image(systemName: "rectangle.split.3x1")
+                        .font(.system(size: 11))
+                        .foregroundColor(.etherTextSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("Wide Player")
 
-            // Experimental tuning (spike)
-            Button {
-                openWindow(id: "experimental")
-            } label: {
-                Image(systemName: "circle.dotted.circle")
-                    .font(.system(size: 11))
-                    .foregroundColor(.etherTextSecondary)
-            }
-            .buttonStyle(.plain)
-            .help("Open Experimental Tuning")
+                Button {
+                    openWindow(id: "visualizer")
+                } label: {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.system(size: 11))
+                        .foregroundColor(.etherTextSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("Visualizer")
 
-            // Color theme popover
-            Button {
-                showThemePicker.toggle()
-            } label: {
-                Image(systemName: "paintpalette")
-                    .font(.system(size: 11))
-                    .foregroundColor(.etherTextSecondary)
+                Button {
+                    openWindow(id: "advanced")
+                } label: {
+                    Image(systemName: "waveform.badge.magnifyingglass")
+                        .font(.system(size: 11))
+                        .foregroundColor(.etherTextSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("Advanced Audio")
+
+                SettingsLink {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 11))
+                        .foregroundColor(.etherTextSecondary)
+                }
+                .buttonStyle(.plain)
+                .help("Settings")
             }
-            .buttonStyle(.plain)
-            .help("Color Theme")
-            .popover(isPresented: $showThemePicker, arrowEdge: .bottom) {
-                themePopover
-            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(0.04))
+            )
 
             Spacer().frame(width: 14)
         }
-        .frame(height: 32)
-        .padding(.top, 2)
-        .offset(y: -3)
+        .frame(height: 40)
+        .padding(.top, 4)
         .contentShape(Rectangle())
         .background(WindowDragHandle())
     }
@@ -411,12 +481,9 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Color.etherWarning.opacity(0.08))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(Color.etherWarning.opacity(0.3), lineWidth: 1)
-                )
+                .shadow(color: Color.etherWarning.opacity(0.15), radius: 8, y: 0)
         )
     }
 
@@ -443,49 +510,31 @@ struct ContentView: View {
                     Text("Output")
                         .font(.etherMono(10, weight: .semibold))
                         .foregroundColor(.etherTextTertiary)
-                    Menu {
-                        ForEach(availableOutputs) { device in
-                            Button(device.name) {
+                    EtherDropdown(
+                        options: availableOutputs.map(\.name),
+                        selection: engine.selectedOutputDevice?.name,
+                        onSelect: { name in
+                            if let device = availableOutputs.first(where: { $0.name == name }) {
                                 engine.selectedOutputDevice = device
                                 engine.hotSwapOutputDevice(device)
                                 UserDefaults.standard.set(device.uid, forKey: "audio.ether.lastOutputUID")
                             }
                         }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Text(engine.selectedOutputDevice?.name ?? "Select output…")
-                                .font(.etherMono(EtherType.body))
-                                .foregroundColor(engine.selectedOutputDevice != nil ? .etherTextPrimary : .etherTextTertiary)
-                                .lineLimit(1)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 7))
-                                .foregroundColor(.etherTextTertiary)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(Color.etherSurfaceHigh)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 4)
-                                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
-                                )
-                        )
+                    ) {
+                        Text(engine.selectedOutputDevice?.name ?? "Select output…")
+                            .font(.etherMono(EtherType.body))
+                            .foregroundColor(engine.selectedOutputDevice != nil ? .etherTextPrimary : .etherTextTertiary)
+                            .lineLimit(1)
                     }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: 8)
                     .fill(Color.etherSurface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-                    )
+                    .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
             )
         }
     }
@@ -522,12 +571,9 @@ struct ContentView: View {
             .padding(.horizontal, 14)
             .frame(height: 36)
             .background(
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: 8)
                     .fill(color.opacity(0.12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .strokeBorder(color.opacity(0.35), lineWidth: 1)
-                    )
+                    .shadow(color: color.opacity(0.2), radius: 6, y: 0)
             )
         }
         .buttonStyle(.plain)

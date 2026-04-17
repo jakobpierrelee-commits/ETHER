@@ -45,12 +45,9 @@ struct ABSlotsBar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Color.etherSurface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-                )
+                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
         )
         .onReceive(NotificationCenter.default.publisher(for: .toggleABSlots)) { _ in
             toggle()

@@ -77,58 +77,42 @@ struct EQBandsView: View {
             // One integrated canvas — no visible sub-regions
             GeometryReader { geo in
                 ZStack {
-                    // Ghost spectrum — post-EQ only (what you're actually hearing)
-                    GhostSpectrum(analyzer: engine.postSpectrum)
-                        .opacity(0.65)
+                    // Heavy rendering layers — Metal-backed
+                    ZStack {
+                        GhostSpectrum(analyzer: engine.postSpectrum)
+                            .opacity(0.65)
+                        dotGrid(size: geo.size)
+                        bandContributions(size: geo.size)
+                        combinedCurve(size: geo.size)
+                    }
+                    .drawingGroup()
 
-                    // Dot-grid backdrop
-                    dotGrid(size: geo.size)
-
-                    // Per-band filled contribution areas (colored)
-                    bandContributions(size: geo.size)
-
-                    // Combined curve — thin white line on top
-                    combinedCurve(size: geo.size)
-
-                    // Q envelope for selected/hovered band
+                    // Interactive layers — need hit testing, stay outside drawingGroup
                     if let bandID = controller.selectedBandID ?? hoveredBandID,
                        let band = controller.bands.first(where: { $0.id == bandID }),
                        let index = controller.bands.firstIndex(where: { $0.id == bandID }) {
                         qEnvelope(band: band, color: EQController.color(for: index), size: geo.size)
                     }
 
-                    // Handles
                     ForEach(Array(controller.bands.enumerated()), id: \.element.id) { i, band in
                         handleView(band: band, index: i, size: geo.size)
                     }
 
-                    // Floating band info card (Ozone-style)
                     if let hoveredID = hoveredBandID,
                        let band = controller.bands.first(where: { $0.id == hoveredID }),
                        let index = controller.bands.firstIndex(where: { $0.id == hoveredID }) {
                         bandInfoCard(band: band, index: index, size: geo.size)
                     }
 
-                    // Axis labels (dB on left, freq on bottom)
                     axisLabels(size: geo.size)
 
-                    // Ghost preview curve if suggestions are active
                     if showSuggestions && !engine.autoEQ.suggestions.isEmpty {
                         suggestionGhostCurve(size: geo.size)
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
-                .background(
-                    ZStack {
-                        Color(white: 0.015)
-                        NoiseTexture(opacity: 0.015)
-                    }
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipped()
+                .background(Color.clear)
                 .onContinuousHover(coordinateSpace: .local) { phase in
                     switch phase {
                     case .active(let location):
@@ -160,7 +144,7 @@ struct EQBandsView: View {
                 }
                 .animation(.easeOut(duration: 0.2), value: showSuggestions)
             }
-            .frame(height: 280)
+            .frame(height: 320)
         }
     }
 
@@ -309,8 +293,8 @@ struct EQBandsView: View {
             }
         }
         .blendMode(.screen)
-        // Slight overall blur softens the outlines further
         .blur(radius: 0.6)
+        .drawingGroup()
     }
 
     // MARK: - Combined Curve (thin white line)
@@ -319,7 +303,7 @@ struct EQBandsView: View {
         let rainbow = ThemeManager.shared.curveGradient
         return Canvas { ctx, _ in
             let w = size.width, h = size.height
-            let steps = 200
+            let steps = 120
 
             var path = Path()
             for s in 0...steps {
@@ -346,35 +330,30 @@ struct EQBandsView: View {
 
     private func axisLabels(size: CGSize) -> some View {
         ZStack {
-            // dB labels, vertical
-            VStack(alignment: .leading) {
-                ForEach([24, 12, 0, -12, -24], id: \.self) { db in
-                    HStack {
-                        Text(db == 0 ? "0" : "\(db > 0 ? "+" : "")\(db)")
-                            .font(.etherMono(EtherType.micro))
-                            .foregroundColor(.white.opacity(0.3))
-                            .frame(width: 20, alignment: .leading)
-                            .padding(.leading, 6)
-                        Spacer()
-                    }
-                    if db != -24 { Spacer() }
-                }
+            // dB labels — positioned using yForGain, inset so they don't clip
+            let dbs: [Float] = [24, 12, 0, -12, -24]
+            ForEach(dbs, id: \.self) { db in
+                Text(db == 0 ? "0" : "\(db > 0 ? "+" : "")\(Int(db))")
+                    .font(.etherValue(EtherType.micro))
+                    .foregroundColor(.white.opacity(0.3))
+                    .position(
+                        x: 16,
+                        y: min(size.height - 8, max(8, yForGain(db, height: size.height)))
+                    )
             }
 
-            // Freq labels, horizontal, bottom — tinted by position in the rainbow
-            VStack {
-                Spacer()
-                HStack(spacing: 0) {
-                    let freqs: [Int] = [50, 100, 200, 500, 1000, 2000, 5000, 10000]
-                    ForEach(freqs, id: \.self) { fq in
-                        let x = xForFreq(Float(fq), width: size.width)
-                        Text(fq < 1000 ? "\(fq)" : "\(fq / 1000)k")
-                            .font(.etherMono(EtherType.micro))
-                            .foregroundColor(.white.opacity(0.3))
-                            .position(x: x, y: size.height - 8)
-                    }
-                }
-                .frame(height: 0)
+            // Freq labels — full decades, tinted by position in the spectrum
+            let freqs: [Int] = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000]
+            let bandColors = ThemeManager.shared.current.bandColors
+            ForEach(freqs, id: \.self) { fq in
+                let raw = xForFreq(Float(fq), width: size.width)
+                let x = min(size.width - 10, max(10, raw))
+                let colorT = Double(raw / size.width)
+                let colorIdx = min(bandColors.count - 1, Int(colorT * Double(bandColors.count)))
+                Text(fq < 1000 ? "\(fq)" : "\(fq / 1000)k")
+                    .font(.etherValue(7))
+                    .foregroundColor(bandColors[colorIdx].opacity(0.5))
+                    .position(x: x, y: size.height - 14)
             }
         }
         .allowsHitTesting(false)
@@ -591,7 +570,7 @@ struct EQBandsView: View {
                 .font(.etherMono(EtherType.micro))
                 .foregroundColor(.white.opacity(0.45))
             Text(value)
-                .font(.etherMono(EtherType.tiny, weight: .medium))
+                .font(.etherValue(EtherType.tiny))
                 .foregroundColor(.white)
                 .monospacedDigit()
         }
@@ -717,7 +696,7 @@ private struct GhostSpectrum: View {
     @ObservedObject var analyzer: SpectrumAnalyzer
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !analyzer.isActive)) { _ in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !analyzer.isActive)) { _ in
             Canvas { ctx, size in
                 let bins = analyzer.magnitudes
                 guard bins.count > 1 else { return }
@@ -746,41 +725,31 @@ private struct GhostSpectrum: View {
                 path.addLine(to: CGPoint(x: w, y: h))
                 path.closeSubpath()
 
-                // Stroke: rainbow trace along the top edge
                 let rainbow = EQController.rainbowGradient
-                ctx.stroke(
-                    path,
-                    with: .linearGradient(
-                        Gradient(colors: rainbow.map { $0.opacity(0.45) }),
-                        startPoint: CGPoint(x: 0, y: h / 2),
-                        endPoint: CGPoint(x: w, y: h / 2)
-                    ),
-                    lineWidth: 1.5
-                )
+                let start = CGPoint(x: 0, y: h / 2)
+                let end = CGPoint(x: w, y: h / 2)
+
+                // Stroke: rainbow trace
+                ctx.stroke(path, with: .linearGradient(
+                    Gradient(colors: rainbow.map { $0.opacity(0.45) }),
+                    startPoint: start, endPoint: end
+                ), lineWidth: 1.5)
 
                 // Glow behind the stroke
                 var glow = ctx
                 glow.addFilter(.blur(radius: 4))
-                glow.stroke(
-                    path,
-                    with: .linearGradient(
-                        Gradient(colors: rainbow.map { $0.opacity(0.2) }),
-                        startPoint: CGPoint(x: 0, y: h / 2),
-                        endPoint: CGPoint(x: w, y: h / 2)
-                    ),
-                    lineWidth: 4
-                )
+                glow.stroke(path, with: .linearGradient(
+                    Gradient(colors: rainbow.map { $0.opacity(0.2) }),
+                    startPoint: start, endPoint: end
+                ), lineWidth: 4)
 
-                // Fill: rainbow horizontal gradient fading down
-                ctx.fill(
-                    path,
-                    with: .linearGradient(
-                        Gradient(colors: rainbow.map { $0.opacity(0.12) }),
-                        startPoint: CGPoint(x: 0, y: h / 2),
-                        endPoint: CGPoint(x: w, y: h / 2)
-                    )
-                )
+                // Fill
+                ctx.fill(path, with: .linearGradient(
+                    Gradient(colors: rainbow.map { $0.opacity(0.12) }),
+                    startPoint: start, endPoint: end
+                ))
             }
+            .drawingGroup()
         }
     }
 }

@@ -32,16 +32,23 @@ struct CircularKnob: View {
     @State private var isHovered = false
     @State private var scrollMonitor: Any?
 
-    private let size: CGFloat = 48
+    private let size: CGFloat = 56
 
     var body: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 5) {
             Text(label)
                 .font(.etherMono(EtherType.micro, weight: .semibold))
                 .tracking(1.2)
                 .foregroundColor(.etherTextTertiary)
+                .fixedSize()
 
             ZStack {
+                // Ambient glow — always in layout, opacity driven by value
+                Circle()
+                    .fill(knobColor.opacity(abs(value) > 0.5 ? Double(min(1, abs(value) / 8)) * 0.2 : 0))
+                    .blur(radius: 18)
+                    .frame(width: size + 24, height: size + 24)
+
                 // Track ring
                 Circle()
                     .trim(from: 0.12, to: 0.88)
@@ -49,7 +56,19 @@ struct CircularKnob: View {
                     .rotationEffect(.degrees(90))
                     .frame(width: size, height: size)
 
-                // Value arc — tick marks style
+                // Value arc glow (blurred duplicate behind)
+                Circle()
+                    .trim(from: trimStart, to: trimEnd)
+                    .stroke(
+                        knobColor.opacity(0.5),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .butt)
+                    )
+                    .rotationEffect(.degrees(90))
+                    .frame(width: size, height: size)
+                    .blur(radius: 4)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.82), value: value)
+
+                // Value arc — crisp
                 Circle()
                     .trim(from: trimStart, to: trimEnd)
                     .stroke(
@@ -60,19 +79,23 @@ struct CircularKnob: View {
                     .frame(width: size, height: size)
                     .animation(.spring(response: 0.35, dampingFraction: 0.82), value: value)
 
-                // Flat dark body — no metallic gradient
+                // Dark body with subtle depth
                 Circle()
-                    .fill(Color(white: 0.08))
-                    .frame(width: size - 8, height: size - 8)
-                    .overlay(
-                        Circle()
-                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                    .fill(
+                        RadialGradient(
+                            colors: [Color(white: 0.11), Color(white: 0.06)],
+                            center: .init(x: 0.45, y: 0.38),
+                            startRadius: 0,
+                            endRadius: size * 0.5
+                        )
                     )
+                    .frame(width: size - 8, height: size - 8)
+                    .shadow(color: .black.opacity(0.5), radius: 6, y: 3)
 
                 // Sharp indicator line
                 Rectangle()
                     .fill(Color.white)
-                    .frame(width: 1.5, height: 10)
+                    .frame(width: 1.5, height: 12)
                     .offset(y: -(size - 18) / 2)
                     .rotationEffect(.degrees(Double(indicatorAngle)))
                     .animation(.spring(response: 0.35, dampingFraction: 0.82), value: value)
@@ -115,7 +138,7 @@ struct CircularKnob: View {
             )
 
             Text(String(format: "%+.1f", value))
-                .font(.etherMono(EtherType.tiny, weight: .medium))
+                .font(.etherValue(EtherType.tiny))
                 .monospacedDigit()
                 .foregroundColor(.gainTint(for: value))
         }
@@ -222,14 +245,11 @@ struct MacroKnobsView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.vertical, 14)
                 .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(Color.etherSurface)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-                        )
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.etherSurfaceHigh)
+                        .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
                 )
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }

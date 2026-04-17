@@ -60,7 +60,7 @@ struct BandDetailStrip: View {
                 .tracking(0.8)
                 .foregroundColor(.etherTextTertiary)
             Text(value)
-                .font(.etherMono(11, weight: .medium))
+                .font(.etherValue(11))
                 .foregroundColor(.etherTextPrimary)
                 .monospacedDigit()
         }
@@ -113,7 +113,7 @@ struct BandDetailStrip: View {
                 .tracking(0.8)
                 .foregroundColor(.etherTextTertiary)
             Text(EtherFormat.gain(band.gain))
-                .font(.etherMono(11, weight: .medium))
+                .font(.etherValue(11))
                 .foregroundColor(band.tint)
                 .monospacedDigit()
         }
@@ -133,7 +133,7 @@ struct BandDetailStrip: View {
                     .foregroundColor(.etherTextTertiary.opacity(0.6))
             }
             Text(EtherFormat.q(band.q))
-                .font(.etherMono(11, weight: .medium))
+                .font(.etherValue(11))
                 .foregroundColor(.etherTextPrimary)
                 .monospacedDigit()
         }

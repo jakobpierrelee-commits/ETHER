@@ -24,20 +24,17 @@ struct MasterGainStrip: View {
             )
 
             Text(EtherFormat.gain(controller.masterGain))
-                .font(.etherMono(11, weight: .medium))
+                .font(.etherValue(11))
                 .monospacedDigit()
                 .foregroundColor(.gainTint(for: controller.masterGain))
                 .frame(width: 60, alignment: .trailing)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 5)
+            RoundedRectangle(cornerRadius: 8)
                 .fill(Color.etherSurface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-                )
+                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
         )
     }
 }

@@ -75,6 +75,44 @@ xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
 
 SIZE=$(du -h "$DMG" | cut -f1)
+
+# ── Update appcast.xml ─────────────────────────────────────────────────
+echo "→ Updating appcast.xml…"
+BUILD=$(defaults read "$PWD/${APP}/Contents/Info" CFBundleVersion)
+TODAY=$(date -u "+%a, %d %b %Y %H:%M:%S +0000")
+SIG_LINE=$(scripts/sparkle-tools/sign_update "$DMG")
+DMG_SIZE=$(stat -f%z "$DMG")
+ED_SIG=$(echo "$SIG_LINE" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f2)
+
+NEW_ITEM="        <item>
+            <title>Version ${VERSION}</title>
+            <pubDate>${TODAY}</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/jakobpierrelee-commits/ether.eq/releases/tag/v${VERSION}</sparkle:releaseNotesLink>
+            <sparkle:version>${BUILD}</sparkle:version>
+            <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url=\"https://github.com/jakobpierrelee-commits/ether.eq/releases/download/v${VERSION}/Ether-${VERSION}.dmg\"
+                sparkle:edSignature=\"${ED_SIG}\"
+                length=\"${DMG_SIZE}\"
+                type=\"application/octet-stream\"/>
+        </item>"
+
+# Inject new item after <language>en</language> line
+python3 -c "
+import sys
+content = open('appcast.xml').read()
+marker = '</language>'
+idx = content.find(marker)
+if idx == -1:
+    print('ERROR: marker not found', file=sys.stderr)
+    sys.exit(1)
+insert_at = idx + len(marker)
+print(content[:insert_at] + '\n\n' + sys.argv[1] + '\n' + content[insert_at:], end='')
+" "$NEW_ITEM" > appcast.xml.tmp && mv appcast.xml.tmp appcast.xml
+
 echo ""
 echo "✓ Done — $DMG ($SIZE)"
-echo "  Ready to distribute. Any Mac will open cleanly on first click."
+echo "  appcast.xml updated. Next steps:"
+echo "  1. Upload $DMG to GitHub Releases as v${VERSION}"
+echo "  2. Commit and push appcast.xml"

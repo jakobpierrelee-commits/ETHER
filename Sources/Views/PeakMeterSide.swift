@@ -4,12 +4,13 @@ import SwiftUI
 /// Shows the post-EQ output signal level with peak-hold.
 struct PeakMeterSide: View {
     @ObservedObject var analyzer: SpectrumAnalyzer
+    @ObservedObject private var theme = ThemeManager.shared
 
     @State private var peakHold: Float = -80
     @State private var lastPeakTime = Date()
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !analyzer.isActive)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !analyzer.isActive)) { context in
             let peak = analyzer.magnitudes.max() ?? -80
             let held = updatedPeakHold(current: peak, time: context.date)
             let isClipping = peak > -0.5
@@ -17,7 +18,7 @@ struct PeakMeterSide: View {
             VStack(spacing: 6) {
                 // Top: current dB value
                 Text(String(format: "%+.1f", peak))
-                    .font(.etherMono(EtherType.tiny, weight: .medium))
+                    .font(.etherValue(EtherType.tiny))
                     .foregroundColor(isClipping ? .etherClip : .etherTextSecondary)
                     .monospacedDigit()
 
@@ -41,13 +42,7 @@ struct PeakMeterSide: View {
                             RoundedRectangle(cornerRadius: 2)
                                 .fill(
                                     LinearGradient(
-                                        colors: [
-                                            Color.p3(1.0, 0.08, 0.08),
-                                            Color.p3(1.0, 0.45, 0.12),
-                                            Color.p3(1.0, 0.82, 0.0),
-                                            Color.p3(0.3, 0.85, 0.3),
-                                            Color.p3(0.15, 0.65, 0.9)
-                                        ],
+                                        colors: Array(theme.current.bandColors.reversed()),
                                         startPoint: .top,
                                         endPoint: .bottom
                                     )

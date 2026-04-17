@@ -30,6 +30,10 @@ struct MenuBarContent: View {
 
             EtherDivider()
 
+            visualSyncRow
+
+            EtherDivider()
+
             footer
         }
         .padding(12)
@@ -270,6 +274,28 @@ struct MenuBarContent: View {
                     set: { controller.setMasterGain($0) }
                 ),
                 range: -12...12
+            )
+        }
+    }
+
+    // MARK: - Visual Sync
+
+    private var visualSyncRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                EtherSectionHeader(text: "Visual Sync")
+                Spacer()
+                Text("\(Int(engine.visualSyncSec * 1000)) ms")
+                    .font(.etherMono(EtherType.tiny, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundColor(.etherTextPrimary)
+            }
+            EtherSlider(
+                value: Binding(
+                    get: { engine.visualSyncSec * 1000 },
+                    set: { engine.visualSyncSec = $0 / 1000 }
+                ),
+                range: 0...500
             )
         }
     }

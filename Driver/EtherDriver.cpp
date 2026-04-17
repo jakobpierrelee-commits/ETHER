@@ -74,7 +74,7 @@ static AudioServerPlugInDriverInterface* sDriverInterfacePtr = &sDriverInterface
 // MARK: - Entry Point
 // ═══════════════════════════════════════════════════════════════════════════════
 
-extern "C" void* EtherDriver_Create(CFAllocatorRef allocator, CFUUIDRef requestedTypeUUID) {
+extern "C" __attribute__((visibility("default"))) void* EtherDriver_Create(CFAllocatorRef allocator, CFUUIDRef requestedTypeUUID) {
     if (!CFEqual(requestedTypeUUID, kAudioServerPlugInTypeUUID)) {
         return nullptr;
     }
@@ -147,16 +147,7 @@ static OSStatus Ether_Initialize(AudioServerPlugInDriverRef driver, AudioServerP
         return kAudioHardwareIllegalOperationError;
     }
     sDriverState->host = host;
-
-    // Notify the host about our device list so it starts querying
-    AudioObjectPropertyAddress addr = {
-        kAudioPlugInPropertyDeviceList,
-        kAudioObjectPropertyScopeGlobal,
-        kAudioObjectPropertyElementMain
-    };
-    host->PropertiesChanged(host, kAudioObjectPlugInObject, 1, &addr);
-
-    os_log(sLog, "Ether initialized");
+    os_log(sLog, "Ether initialized — host stored, waiting for HAL queries");
     return kAudioHardwareNoError;
 }
 

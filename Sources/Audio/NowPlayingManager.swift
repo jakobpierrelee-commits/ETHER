@@ -163,6 +163,22 @@ final class NowPlayingManager: ObservableObject {
 
     // MARK: - Commands (osascript shell for hardened runtime compatibility)
 
+    func openCurrentPlayer() {
+        let candidates: [(name: String, bundle: String)] = [
+            ("Spotify", "com.spotify.client"),
+            ("Music", "com.apple.Music")
+        ]
+        for candidate in candidates {
+            if NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == candidate.bundle }),
+               let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: candidate.bundle) {
+                let cfg = NSWorkspace.OpenConfiguration()
+                cfg.activates = true
+                NSWorkspace.shared.openApplication(at: url, configuration: cfg, completionHandler: nil)
+                return
+            }
+        }
+    }
+
     func togglePlayPause() {
         sendCommand("playpause")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.fetchNowPlaying() }

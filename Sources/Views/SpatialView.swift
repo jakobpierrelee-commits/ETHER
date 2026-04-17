@@ -41,12 +41,9 @@ struct SpatialView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    RoundedRectangle(cornerRadius: 5)
+                    RoundedRectangle(cornerRadius: 8)
                         .fill(Color.etherSurface)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
-                        )
+                        .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
                 )
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -162,7 +159,7 @@ struct SpatialView: View {
 
     private func valueText(_ text: String) -> some View {
         Text(text)
-            .font(.etherMono(10, weight: .medium))
+            .font(.etherValue(10))
             .monospacedDigit()
             .foregroundColor(.etherTextPrimary)
             .frame(width: 56, alignment: .trailing)

@@ -16,6 +16,7 @@ struct AdvancedView: View {
 
                 loudnessSection
                 dehissSection
+                visualOffsetSection
                 transportSection
                 stereoUtilsSection
                 hotkeysSection
@@ -72,7 +73,7 @@ struct AdvancedView: View {
                 .foregroundColor(.etherTextTertiary)
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(String(format: "%.1f", value.isFinite ? value : -70))
-                    .font(.etherMono(highlight ? EtherType.xxl : EtherType.xl, weight: .medium))
+                    .font(.etherValue(highlight ? EtherType.xxl : EtherType.xl))
                     .monospacedDigit()
                     .foregroundColor(highlight ? .etherAccent : .etherTextPrimary)
                 Text(unit)
@@ -152,6 +153,51 @@ struct AdvancedView: View {
                             .strokeBorder(Color.etherAccent.opacity(0.35), lineWidth: 1)
                     )
             )
+    }
+
+    // MARK: - Visual latency compensation
+
+    private var visualOffsetSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                EtherSectionHeader(text: "Visual Sync")
+                Spacer()
+                Button("Reset") {
+                    engine.visualSyncSec = 0
+                }
+                .buttonStyle(.plain)
+                .font(.etherMono(10))
+                .foregroundColor(.etherTextSecondary)
+            }
+
+            Text("Adds a tiny delay to audio output so visuals appear in sync. Increase if the spectrum lags behind what you hear.")
+                .font(.etherMono(9))
+                .foregroundColor(.etherTextTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                Text("Audio Delay")
+                    .font(.etherMono(10, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundColor(.etherTextTertiary)
+                    .frame(width: 80, alignment: .leading)
+
+                EtherSlider(
+                    value: Binding(
+                        get: { engine.visualSyncSec * 1000 },
+                        set: { engine.visualSyncSec = $0 / 1000 }
+                    ),
+                    range: 0...500
+                )
+
+                Text("\(Int(engine.visualSyncSec * 1000)) ms")
+                    .font(.etherMono(10))
+                    .foregroundColor(.etherTextPrimary)
+                    .monospacedDigit()
+                    .frame(width: 52, alignment: .trailing)
+            }
+        }
+        .etherPanel()
     }
 
     // MARK: - Transport / device info

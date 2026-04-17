@@ -13,10 +13,11 @@ final class SpectrumAnalyzer: ObservableObject {
     static let displayBins = 256
 
     /// Magnitudes in dBFS, one per display bin. Values typically in [-80, 0].
-    @Published var magnitudes: [Float] = Array(repeating: -80, count: displayBins)
+    /// NOT @Published — we fire objectWillChange once manually after updating both.
+    var magnitudes: [Float] = Array(repeating: -80, count: displayBins)
 
     /// Peak-hold per display bin — decays slowly for visualizer dots.
-    @Published var peaks: [Float] = Array(repeating: -80, count: displayBins)
+    var peaks: [Float] = Array(repeating: -80, count: displayBins)
     private let peakDecayPerFrame: Float = 0.8
 
     // Spectrogram scrolling history: ring of columns.
@@ -51,10 +52,13 @@ final class SpectrumAnalyzer: ObservableObject {
     // Background processing
     private let processingQueue = DispatchQueue(label: "audio.ether.spectrum", qos: .userInteractive)
     private var lastProcessTime: TimeInterval = 0
-    private let minFrameInterval: TimeInterval = 1.0 / 30.0  // 30 fps — imperceptible vs 60
+    private let minFrameInterval: TimeInterval = 1.0 / 60.0  // 60 fps — smooth with ring buffer + drawingGroup
 
     /// Set to false to skip FFT work entirely (e.g., when window is hidden).
     var isActive: Bool = true
+
+    /// Visual sync offset — stored here for UI access but applied as audio delay in EngineManager.
+    var visualOffsetSec: Float = 0
 
     init() {
         log2n = vDSP_Length(log2(Float(fftSize)))
@@ -63,6 +67,9 @@ final class SpectrumAnalyzer: ObservableObject {
         workingBuffer = [Float](repeating: 0, count: fftSize)
         realBuffer    = [Float](repeating: 0, count: fftSize / 2)
         imagBuffer    = [Float](repeating: 0, count: fftSize / 2)
+
+        ringCapacity = fftSize
+        ring = [Float](repeating: 0, count: fftSize)
 
         // Hann window for spectral leakage reduction
         window = [Float](repeating: 0, count: fftSize)
@@ -73,35 +80,52 @@ final class SpectrumAnalyzer: ObservableObject {
         vDSP_destroy_fftsetup(fftSetup)
     }
 
-    // Accumulator buffer to collect enough samples for a 4096-point FFT
-    private var accumulator: [Float] = []
+    // Ring buffer — circular, always holds the most recent samples
+    private var ring: [Float]
+    private var ringWritePos: Int = 0
+    private var ringFilled: Int = 0
+    private let ringCapacity: Int
 
     /// Called with interleaved stereo samples.
-    /// Throttles to 30 fps and dispatches processing to a background queue.
-    /// Completely skips work when `isActive` is false.
+    /// Writes into ring buffer, then runs FFT on the most recent window every frame.
     func submit(interleaved: UnsafePointer<Float>, frameCount: Int) {
         guard isActive else { return }
 
-        // Sum to mono and append to accumulator
+        // Sum to mono and write into ring buffer
         for i in 0..<frameCount {
-            accumulator.append((interleaved[i * 2] + interleaved[i * 2 + 1]) * 0.5)
+            ring[ringWritePos] = (interleaved[i * 2] + interleaved[i * 2 + 1]) * 0.5
+            ringWritePos = (ringWritePos + 1) % ringCapacity
+            if ringFilled < ringCapacity { ringFilled += 1 }
         }
 
-        // Keep accumulator bounded; only process when we have enough and are due
-        if accumulator.count < fftSize { return }
+        // Need a full window before we can FFT
+        guard ringFilled >= fftSize else { return }
 
+        // Throttle to target frame rate
         let now = CFAbsoluteTimeGetCurrent()
-        guard now - lastProcessTime >= minFrameInterval else {
-            // Trim to avoid unbounded growth
-            if accumulator.count > fftSize * 2 {
-                accumulator.removeFirst(accumulator.count - fftSize)
-            }
-            return
-        }
+        guard now - lastProcessTime >= minFrameInterval else { return }
         lastProcessTime = now
 
-        let mono = Array(accumulator.suffix(fftSize))
-        accumulator.removeFirst(accumulator.count - fftSize)
+        // Read the most recent fftSize samples from the ring
+        var mono = [Float](repeating: 0, count: fftSize)
+        let start = (ringWritePos - fftSize + ringCapacity) % ringCapacity
+        if start + fftSize <= ringCapacity {
+            // Contiguous
+            mono.withUnsafeMutableBufferPointer { dst in
+                ring.withUnsafeBufferPointer { src in
+                    dst.baseAddress!.update(from: src.baseAddress! + start, count: fftSize)
+                }
+            }
+        } else {
+            // Wraps around
+            let firstChunk = ringCapacity - start
+            mono.withUnsafeMutableBufferPointer { dst in
+                ring.withUnsafeBufferPointer { src in
+                    dst.baseAddress!.update(from: src.baseAddress! + start, count: firstChunk)
+                    (dst.baseAddress! + firstChunk).update(from: src.baseAddress!, count: fftSize - firstChunk)
+                }
+            }
+        }
 
         processingQueue.async { [mono] in
             self.process(mono: mono)
@@ -207,6 +231,8 @@ final class SpectrumAnalyzer: ObservableObject {
 
     private func applyAndPublish(newFrame: [Float]) {
         guard newFrame.count == magnitudes.count else { return }
+
+        // Mutate in place — no array copies
         for i in 0..<magnitudes.count {
             let decayed = magnitudes[i] - decayPerFrame
             let blended = max(newFrame[i], decayed)
@@ -216,13 +242,8 @@ final class SpectrumAnalyzer: ObservableObject {
             peaks[i] = max(newFrame[i], peakDecayed)
         }
 
-        let cols = Self.spectrogramColumns
-        let rows = Self.displayBins
-        let col = spectrogramWriteColumn
-        for row in 0..<rows {
-            spectrogramGrid[row * cols + col] = newFrame[row]
-        }
-        spectrogramWriteColumn = (col + 1) % cols
+        // Single objectWillChange for all mutations
+        objectWillChange.send()
 
         onFrame?(newFrame)
     }

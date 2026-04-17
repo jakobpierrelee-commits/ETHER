@@ -4,6 +4,11 @@ options:
   deploymentTarget:
     macOS: "14.0"
 
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+
 targets:
   # ─── Swift App ────────────────────────────────────────
   Ether:
@@ -14,12 +19,15 @@ targets:
       - path: Assets/Ether.icns
       - path: Assets/Fonts
         buildPhase: resources
+    dependencies:
+      - package: Sparkle
+        product: Sparkle
     settings:
       base:
         SWIFT_VERSION: "5"
         PRODUCT_BUNDLE_IDENTIFIER: audio.ether.app
         PRODUCT_NAME: Ether
-        MARKETING_VERSION: "1.1.2"
+        MARKETING_VERSION: "1.1.4"
         CURRENT_PROJECT_VERSION: "6"
         CODE_SIGN_ENTITLEMENTS: Ether.entitlements
       configs:
@@ -33,9 +41,12 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSUIElement: false
-        NSMicrophoneUsageDescription: "Ether reads system audio from the BlackHole virtual audio device to apply EQ processing."
+        NSMicrophoneUsageDescription: "Ether reads system audio through its audio driver to apply EQ processing."
         NSAppleEventsUsageDescription: "Ether reads now-playing info from Spotify and Music to display album art and track info in the mini player."
         ATSApplicationFontsPath: "Fonts/"
+        SUFeedURL: "https://raw.githubusercontent.com/jakobpierrelee-commits/ether.eq/main/appcast.xml"
+        SUEnableAutomaticChecks: true
+        SUPublicEDKey: "FHQHKY2LGzN2xFwv7Ig36oc9dmEhCQyA4UOngfmukKs="
 
   # ─── C++ AudioServerPlugIn Driver ─────────────────────
   EtherDriver:
@@ -55,7 +66,7 @@ targets:
         GCC_SYMBOLS_PRIVATE_EXTERN: YES
         SKIP_INSTALL: NO
         INSTALL_PATH: /Library/Audio/Plug-Ins/HAL
-        MARKETING_VERSION: "1.1.2"
+        MARKETING_VERSION: "1.1.4"
         CURRENT_PROJECT_VERSION: "6"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Driver/Info.plist

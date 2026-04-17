@@ -3,68 +3,6 @@ import CoreAudio
 import AudioToolbox
 import os
 
-// MARK: - HAL IOProc
-
-/// Context passed to the C IOProc callback. Contains raw ring buffer references.
-final class IOProcContext {
-    let ring: FloatRingBuffer
-    let analyzerRing: FloatRingBuffer
-    init(ring: FloatRingBuffer, analyzerRing: FloatRingBuffer) {
-        self.ring = ring
-        self.analyzerRing = analyzerRing
-    }
-}
-
-/// C-compatible IOProc. Runs on the real-time audio thread — no allocations,
-/// no locks, no Swift ARC. Just memcpy-style writes into pre-allocated rings.
-private let etherIOProc: AudioDeviceIOProc = { _, _, inInputData, _, _, _, clientData in
-    guard let clientData = clientData else { return noErr }
-    let ctx = Unmanaged<IOProcContext>.fromOpaque(clientData).takeUnretainedValue()
-
-    // inInputData is non-optional in the typealias but can be a list with zero buffers
-    // at startup. The UnsafePointer cast is safe either way.
-    let bufferList = UnsafeMutableAudioBufferListPointer(
-        UnsafeMutablePointer(mutating: inInputData)
-    )
-    guard bufferList.count > 0,
-          bufferList[0].mDataByteSize > 0,
-          bufferList[0].mData != nil else { return noErr }
-
-    // BlackHole presents either 1 interleaved buffer (2 channels) or 2 deinterleaved
-    let first = bufferList[0]
-    let channels = Int(first.mNumberChannels)
-
-    if channels == 2 {
-        // Interleaved: mData is L,R,L,R,...
-        guard let data = first.mData?.assumingMemoryBound(to: Float.self) else { return noErr }
-        let frames = Int(first.mDataByteSize) / MemoryLayout<Float>.size / 2
-        ctx.ring.write(src: data, count: frames)
-        ctx.analyzerRing.write(src: data, count: frames)
-    } else if bufferList.count >= 2 {
-        // Deinterleaved: buffer[0]=L, buffer[1]=R
-        let bufL = bufferList[0]
-        let bufR = bufferList[1]
-        guard let dataL = bufL.mData?.assumingMemoryBound(to: Float.self),
-              let dataR = bufR.mData?.assumingMemoryBound(to: Float.self) else { return noErr }
-        let frames = Int(bufL.mDataByteSize) / MemoryLayout<Float>.size
-
-        // Interleave into a stack-allocated scratch of reasonable max size
-        // BlackHole buffers are typically 512 frames, so 4096 is plenty.
-        let maxFrames = 4096
-        let copyFrames = min(frames, maxFrames)
-        var scratch = [Float](repeating: 0, count: copyFrames * 2)
-        for f in 0..<copyFrames {
-            scratch[f * 2]     = dataL[f]
-            scratch[f * 2 + 1] = dataR[f]
-        }
-        scratch.withUnsafeBufferPointer { ptr in
-            ctx.ring.write(src: ptr.baseAddress!, count: copyFrames)
-            ctx.analyzerRing.write(src: ptr.baseAddress!, count: copyFrames)
-        }
-    }
-    return noErr
-}
-
 // MARK: - Engine Status
 
 enum EngineStatus: Equatable {
@@ -110,6 +48,7 @@ final class EngineManager: ObservableObject {
     private var ringBuffer: FloatRingBuffer?
     private var stereoProcessor: StereoProcessor?
     private var reverbNode: AVAudioUnitReverb?
+    private var syncDelayNode: AVAudioUnitDelay?
 
     /// Spatial / stereo processing state — exposed for the UI to write.
     let spatial = SpatialController()
@@ -152,13 +91,18 @@ final class EngineManager: ObservableObject {
     /// Post-EQ analyzer ring buffer — fed from an installTap on the EQ node.
     private var postAnalyzerRingBuffer: FloatRingBuffer?
 
+    /// Visual sync offset in seconds (0–0.5). Persisted across launches.
+    /// Delays the audio output (via AVAudioUnitDelay after the EQ tap) so visuals appear earlier.
+    @Published var visualSyncSec: Float = 0 {
+        didSet {
+            UserDefaults.standard.set(visualSyncSec, forKey: "audio.ether.visualOffset")
+            syncDelayNode?.delayTime = TimeInterval(visualSyncSec)
+        }
+    }
+
     /// The system default output device at the time Start was clicked.
     /// Restored when the engine stops.
     private var previousDefaultOutputDeviceID: AudioDeviceID?
-
-    /// UserDefaults key for persisting the last-known-good output device UID.
-    /// Used to recover if the app crashes while routed to BlackHole.
-    private let lastGoodOutputKey = "audio.ether.lastGoodOutputUID"
 
     private var defaultFrequencies: [Float] { EQController.defaultFrequencies }
 
@@ -211,17 +155,17 @@ final class EngineManager: ObservableObject {
         status = .starting
 
         // Remember current system default output so we can restore it on stop
-        previousDefaultOutputDeviceID = currentDefaultOutputDeviceID()
+        previousDefaultOutputDeviceID = SystemAudioRouter.currentDefaultOutputDeviceID()
 
         // Persist the device UID so we can recover across crashes
         if let prevID = previousDefaultOutputDeviceID,
            prevID != blackHoleID,
            let prevUID = AudioDeviceManager.deviceUID(for: prevID) {
-            UserDefaults.standard.set(prevUID, forKey: lastGoodOutputKey)
+            UserDefaults.standard.set(prevUID, forKey: SystemAudioRouter.lastGoodOutputKey)
         }
 
         // Route system audio to BlackHole so it flows through our EQ
-        if !setDefaultOutputDevice(blackHoleID) {
+        if !SystemAudioRouter.setDefaultOutputDevice(blackHoleID) {
             logger.warning("Could not switch system output to BlackHole — user may need to do it manually")
         }
 
@@ -247,7 +191,7 @@ final class EngineManager: ObservableObject {
             logger.error("Start failed: \(error.localizedDescription, privacy: .public)")
             // Restore system output on failure
             if let previous = previousDefaultOutputDeviceID {
-                _ = setDefaultOutputDevice(previous)
+                _ = SystemAudioRouter.setDefaultOutputDevice(previous)
             }
             status = .error(error.localizedDescription)
         }
@@ -260,9 +204,9 @@ final class EngineManager: ObservableObject {
             self.teardown()
 
             if let previous = self.previousDefaultOutputDeviceID {
-                _ = self.setDefaultOutputDevice(previous)
+                _ = SystemAudioRouter.setDefaultOutputDevice(previous)
                 self.previousDefaultOutputDeviceID = nil
-                UserDefaults.standard.removeObject(forKey: self.lastGoodOutputKey)
+                UserDefaults.standard.removeObject(forKey: SystemAudioRouter.lastGoodOutputKey)
             }
 
             self.inputDeviceName = "—"
@@ -291,73 +235,17 @@ final class EngineManager: ObservableObject {
     func emergencyRestore() {
         teardown()
         if let previous = previousDefaultOutputDeviceID {
-            _ = setDefaultOutputDevice(previous)
+            _ = SystemAudioRouter.setDefaultOutputDevice(previous)
             previousDefaultOutputDeviceID = nil
-            UserDefaults.standard.removeObject(forKey: lastGoodOutputKey)
+            UserDefaults.standard.removeObject(forKey: SystemAudioRouter.lastGoodOutputKey)
         }
     }
 
     /// Safety net on launch: if system is currently routed to BlackHole AND we
-    /// have a persisted last-good device, restore it. Handles the case where the
-    /// app crashed or was force-quit while routed to BlackHole.
+    /// have a persisted last-good device, restore it. Handles crash/force-quit
+    /// while routed to BlackHole. Delegates to SystemAudioRouter.
     func restoreOutputIfStuckOnBlackHole() {
-        guard let currentID = currentDefaultOutputDeviceID(),
-              let currentName = AudioDeviceManager.deviceName(for: currentID),
-              currentName.contains("BlackHole") else {
-            return
-        }
-
-        guard let savedUID = UserDefaults.standard.string(forKey: lastGoodOutputKey) else {
-            logger.warning("System output is BlackHole but no saved device to restore to")
-            return
-        }
-
-        // Find the device by UID
-        for device in AudioDeviceManager.allDevices() where device.uid == savedUID {
-            if setDefaultOutputDevice(device.id) {
-                logger.log("Restored system output to \(device.name, privacy: .public) (was stuck on BlackHole)")
-                UserDefaults.standard.removeObject(forKey: lastGoodOutputKey)
-            }
-            return
-        }
-
-        logger.warning("Could not find device with UID \(savedUID, privacy: .public) to restore")
-    }
-
-    // MARK: - System Default Output Routing
-
-    private func currentDefaultOutputDeviceID() -> AudioDeviceID? {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var deviceID: AudioDeviceID = kAudioObjectUnknown
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        let status = AudioObjectGetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceID
-        )
-        guard status == noErr, deviceID != kAudioObjectUnknown else { return nil }
-        return deviceID
-    }
-
-    @discardableResult
-    private func setDefaultOutputDevice(_ deviceID: AudioDeviceID) -> Bool {
-        var address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var id = deviceID
-        let status = AudioObjectSetPropertyData(
-            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil,
-            UInt32(MemoryLayout<AudioDeviceID>.size), &id
-        )
-        if status != noErr {
-            logger.error("Failed to set default output device: OSStatus \(status, privacy: .public)")
-            return false
-        }
-        return true
+        SystemAudioRouter.restoreOutputIfStuckOnBlackHole()
     }
 
     // MARK: - Build / Teardown
@@ -384,6 +272,9 @@ final class EngineManager: ObservableObject {
         self.stereoProcessor = processor
         spatial.processor = processor
         denoise.processor = processor
+
+        // Restore saved visual sync setting
+        self.visualSyncSec = UserDefaults.standard.float(forKey: "audio.ether.visualOffset")
 
         // Source node pulls from the ring buffer in its render callback — no queuing.
         // Ring stores interleaved; outputs deinterleaved (one buffer per channel),
@@ -437,9 +328,20 @@ final class EngineManager: ObservableObject {
         self.reverbNode = reverb
         spatial.reverbNode = reverb
 
+        // Visual sync delay — inserted AFTER the EQ tap so spectrum sees un-delayed audio
+        // but speakers get delayed. Pure delay: 100% wet, 0 feedback, max LPF.
+        let syncDelay = AVAudioUnitDelay()
+        syncDelay.delayTime = TimeInterval(visualSyncSec)
+        syncDelay.feedback = 0
+        syncDelay.lowPassCutoff = 20000
+        syncDelay.wetDryMix = 100
+        outEngine.attach(syncDelay)
+        self.syncDelayNode = syncDelay
+
         outEngine.connect(sourceNode, to: eq, format: format)
         outEngine.connect(eq, to: reverb, format: format)
-        outEngine.connect(reverb, to: outEngine.mainMixerNode, format: format)
+        outEngine.connect(reverb, to: syncDelay, format: format)
+        outEngine.connect(syncDelay, to: outEngine.mainMixerNode, format: format)
 
         outEngine.prepare()
         try outEngine.start()
@@ -518,20 +420,22 @@ final class EngineManager: ObservableObject {
     /// Feed BOTH analyzers every tick — pre-EQ for the ghost spectrum, post-EQ for the bright trace.
     private func startAnalyzerTimer() {
         analyzerTimer?.invalidate()
-        let preScratch = UnsafeMutablePointer<Float>.allocate(capacity: 4096)
-        let postScratch = UnsafeMutablePointer<Float>.allocate(capacity: 4096)
-        analyzerTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+        let scratchSize = 8192  // enough for ~85ms at 48kHz stereo
+        let preScratch = UnsafeMutablePointer<Float>.allocate(capacity: scratchSize)
+        let postScratch = UnsafeMutablePointer<Float>.allocate(capacity: scratchSize)
+        analyzerTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
 
+            // Drain ALL available samples — don't cap at 512, that causes ~250ms pipeline lag
             if let pre = self.analyzerRingBuffer {
-                let frames = min(512, pre.availableToRead)
+                let frames = min(scratchSize / 2, pre.availableToRead)
                 if frames > 0 {
                     _ = pre.read(dst: preScratch, count: frames)
                     self.spectrum.submit(interleaved: preScratch, frameCount: frames)
                 }
             }
             if let post = self.postAnalyzerRingBuffer {
-                let frames = min(512, post.availableToRead)
+                let frames = min(scratchSize / 2, post.availableToRead)
                 if frames > 0 {
                     _ = post.read(dst: postScratch, count: frames)
                     self.postSpectrum.submit(interleaved: postScratch, frameCount: frames)

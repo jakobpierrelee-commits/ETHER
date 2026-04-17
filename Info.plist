@@ -29,6 +29,12 @@
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Ether reads now-playing info from Spotify and Music to display album art and track info in the mini player.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Ether reads system audio from the BlackHole virtual audio device to apply EQ processing.</string>
+	<string>Ether reads system audio through its audio driver to apply EQ processing.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/jakobpierrelee-commits/ether.eq/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>FHQHKY2LGzN2xFwv7Ig36oc9dmEhCQyA4UOngfmukKs=</string>
 </dict>
 </plist>

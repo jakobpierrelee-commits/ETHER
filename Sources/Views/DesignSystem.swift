@@ -59,13 +59,12 @@ extension Color {
 
 // MARK: - Typography Tokens
 //
-// Single source of truth for all fonts. Change `fontFamily` to swap the
-// entire UI typeface (e.g. "JetBrains Mono", "OCR-A", "SF Mono").
-// The variant family is used for display/header text when you want contrast.
+// Dual font scheme: SF Pro (proportional) for labels/UI, SF Mono for numeric readouts.
+// SF Pro = Apple's system font, ships on every Mac. Clean, engineered for UI.
+// SF Mono = system monospace. Used only where digits need to align (dB, Hz, %).
 
 enum EtherType {
-    static let fontFamily         = "Space Mono"
-    static let variantFamily      = "Space Mono"
+    static let monoFamily         = "SF Mono"
 
     // Size scale
     static let micro:  CGFloat    = 8
@@ -80,27 +79,30 @@ enum EtherType {
 }
 
 extension Font {
-    /// Primary font — defaults to Space Mono, falls back to system mono.
+    /// Primary UI font — proportional SF Pro for all labels, headers, buttons.
+    /// This is the default used throughout the app. Replaces the old Space Mono everywhere.
     static func etherMono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .custom(EtherType.fontFamily, size: size)
-            .weight(weight)
+        .system(size: size, weight: weight, design: .default)
     }
 
-    /// Variant font — for display/headers when you want typographic contrast.
+    /// Variant font — for display/headers. SF Pro Rounded for softer branding feel.
     static func etherVariant(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
-        .custom(EtherType.variantFamily, size: size)
+        .system(size: size, weight: weight, design: .rounded)
+    }
+
+    /// Numeric readout font — SF Mono for values that need to align (dB, Hz, Q, %).
+    static func etherValue(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
+        .custom(EtherType.monoFamily, size: size)
             .weight(weight)
     }
 
-    /// UI labels, section headers.
+    /// UI labels, section headers — proportional SF Pro.
     static func etherLabel(_ size: CGFloat = EtherType.body, weight: Font.Weight = .regular) -> Font {
-        .custom(EtherType.fontFamily, size: size)
-            .weight(weight)
+        .system(size: size, weight: weight, design: .default)
     }
 
     /// Small uppercase section header. Paired with tracking and tertiary color.
-    static let etherSectionHeader = Font.custom(EtherType.fontFamily, size: EtherType.tiny)
-        .weight(.semibold)
+    static let etherSectionHeader = Font.system(size: EtherType.tiny, weight: .semibold, design: .default)
 }
 
 // MARK: - Formatters
@@ -158,29 +160,23 @@ struct NoiseTexture: View {
 
 struct EtherPanel: ViewModifier {
     var padding: CGFloat = 12
-    var cornerRadius: CGFloat = 4
+    var cornerRadius: CGFloat = 8
+    var elevated: Bool = false
 
     func body(content: Content) -> some View {
         content
             .padding(padding)
             .background(
-                ZStack {
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(Color.etherSurface)
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .fill(.clear)
-                        .overlay(NoiseTexture(opacity: 0.025))
-                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-                    RoundedRectangle(cornerRadius: cornerRadius)
-                        .strokeBorder(Color.white.opacity(0.07), lineWidth: 1)
-                }
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(elevated ? Color.etherSurfaceHigh : Color.etherSurface)
+                    .shadow(color: .black.opacity(elevated ? 0.35 : 0.2), radius: elevated ? 6 : 3, y: elevated ? 3 : 1)
             )
     }
 }
 
 extension View {
-    func etherPanel(padding: CGFloat = 12, cornerRadius: CGFloat = 4) -> some View {
-        modifier(EtherPanel(padding: padding, cornerRadius: cornerRadius))
+    func etherPanel(padding: CGFloat = 12, cornerRadius: CGFloat = 8, elevated: Bool = false) -> some View {
+        modifier(EtherPanel(padding: padding, cornerRadius: cornerRadius, elevated: elevated))
     }
 }
 
@@ -306,12 +302,8 @@ struct EtherButtonStyle: ButtonStyle {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(color.opacity(filled ? 0.2 : 0.08))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(color.opacity(0.3), lineWidth: 1)
-                    )
             )
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
@@ -339,6 +331,118 @@ struct EtherSectionHeader: View {
                 .tracking(2.0)
                 .foregroundColor(.etherTextTertiary)
         }
+    }
+}
+
+// MARK: - Glass Dropdown
+
+struct EtherDropdown<Label: View>: View {
+    let options: [String]
+    let selection: String?
+    let onSelect: (String) -> Void
+    let label: Label
+
+    @State private var isOpen = false
+    @State private var mouseLocation: CGPoint = .zero
+
+    init(options: [String], selection: String?, onSelect: @escaping (String) -> Void, @ViewBuilder label: () -> Label) {
+        self.options = options
+        self.selection = selection
+        self.onSelect = onSelect
+        self.label = label()
+    }
+
+    var body: some View {
+        Button {
+            isOpen.toggle()
+        } label: {
+            HStack(spacing: 5) {
+                label
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .semibold))
+                    .foregroundColor(.etherTextTertiary)
+                    .rotationEffect(.degrees(isOpen ? 180 : 0))
+                    .animation(.easeOut(duration: 0.15), value: isOpen)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.12), .white.opacity(0.04)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                ),
+                                lineWidth: 0.5
+                            )
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+            GlassDropdownMenu(
+                options: options,
+                selection: selection,
+                onSelect: { option in
+                    onSelect(option)
+                    isOpen = false
+                }
+            )
+        }
+    }
+}
+
+private struct GlassDropdownMenu: View {
+    let options: [String]
+    let selection: String?
+    let onSelect: (String) -> Void
+    @State private var hoveredOption: String?
+    @State private var mousePos: CGPoint = .zero
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(options, id: \.self) { option in
+                let isHovered = hoveredOption == option
+                let isSelected = selection == option
+
+                Button {
+                    onSelect(option)
+                } label: {
+                    HStack(spacing: 8) {
+                        if isSelected {
+                            Circle()
+                                .fill(Color.etherAccent)
+                                .frame(width: 4, height: 4)
+                        } else {
+                            Spacer().frame(width: 4)
+                        }
+                        Text(option)
+                            .font(.etherMono(EtherType.small))
+                            .foregroundColor(isSelected ? .etherAccent : (isHovered ? .white : .etherTextPrimary))
+                            .lineLimit(1)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(isHovered ? Color.etherAccent.opacity(0.12) : .clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { hoveredOption = $0 ? option : (hoveredOption == option ? nil : hoveredOption) }
+            }
+        }
+        .padding(6)
+        .frame(minWidth: 200)
+        .background(Color.etherBackground.opacity(0.85))
+        .background(.ultraThinMaterial)
+        .environment(\.colorScheme, .dark)
     }
 }
 

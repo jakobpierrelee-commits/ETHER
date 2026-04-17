@@ -20,9 +20,11 @@
 		24E75EFB99DDC5C24A4EB1B4 /* MiniPlayerPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23FB684C7750302A8E428202 /* MiniPlayerPanel.swift */; };
 		33D43830E270463441416B78 /* EtherApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58AE8E1DBB9765F58547F7F /* EtherApp.swift */; };
 		34BC3E88A2F9DDEBCA0AB2C9 /* LoudnessMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E118E571770242DECADB921 /* LoudnessMeter.swift */; };
+		35225D3C7DFA417951773DCE /* SystemAudioRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F6133C094E55F7B3B275FE3 /* SystemAudioRouter.swift */; };
 		37309F43F38EE1802B6E5C23 /* ShortcutCheatsheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B161BF497B3BBD5FBDC53392 /* ShortcutCheatsheet.swift */; };
 		49CC1B5039E8113277474047 /* SpaceMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FCDD102265DA198D7C5BA7D5 /* SpaceMono-Regular.ttf */; };
 		4B40296CF9A107E91AD5485B /* NowPlayingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17CEF7F0CF99D7902B634C1C /* NowPlayingManager.swift */; };
+		509D52C6BF88899A970E148C /* MiniVisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A9A956BA420F72230EF6B1 /* MiniVisualizerView.swift */; };
 		596AD0A1C6FC26B00D1CB2E2 /* ExperimentalTuningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DC10AAAAB3DF5E3DCEE1BC2 /* ExperimentalTuningView.swift */; };
 		60C442C42B2D20A83B275DC2 /* EtherDriver.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 5346113DFBCAF7DF24CD68E4 /* EtherDriver.cpp */; };
 		658C5A427E77145C0069B20D /* AdaptiveEQ.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B2C397962A0CA1E5BA1AB42 /* AdaptiveEQ.swift */; };
@@ -34,19 +36,25 @@
 		783733AED72409D6830ECC02 /* EQProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2258F6592852C465D67301C6 /* EQProfile.swift */; };
 		7B2FF890FCAEC60342D2C212 /* MiniPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C354B264EE4368894839F645 /* MiniPlayerView.swift */; };
 		7F74D59C9DD543C14530ECD7 /* ABSlotsBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B152E3EAF007229E217AC976 /* ABSlotsBar.swift */; };
+		861C791B53BD992ECDFA49AC /* EtherealWaveform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 154C915D3839D3269B2ED66A /* EtherealWaveform.swift */; };
 		912D8758EA0288BDDFE12119 /* ReferenceMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEB53A6D91026EAAC16DD3A /* ReferenceMatcher.swift */; };
 		91544976E18817E5F928A747 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AC7B34D642F03D2E8927A183 /* CoreFoundation.framework */; };
 		92C1B6049E380CD0BA5111EC /* RingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A766B83C1D05FED65BA88D64 /* RingBuffer.swift */; };
+		9E6C508414128A771F673E0B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = EFF636577FD55EE2B708D289 /* Sparkle */; };
 		A7A15E1EDD30A0B78A780C05 /* SpatialController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FDBC54B4D85901D3AB63E96 /* SpatialController.swift */; };
 		AA9596B664D6D76BF6E689E0 /* GlobalHotkeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = D693C3444C6E601A07C466CF /* GlobalHotkeys.swift */; };
 		AECD72FFD9D8A48BAE8F75AB /* EQBandsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBE97FA899ACA8E1B1B527A2 /* EQBandsView.swift */; };
 		B43B2573D794B9D357BF6440 /* EngineManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CB929C46BE8B93107ED6C9F /* EngineManager.swift */; };
 		B7AE531349200BF0DBBA0CD6 /* SpatialView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB5317D16E2C667BA3CFE983 /* SpatialView.swift */; };
 		B82AB43D76B408D5701FA240 /* WindowDragHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D28D698D467438AF89F956D /* WindowDragHandle.swift */; };
+		B950B67A4B4579EC0F5D0FEC /* WideMiniPlayerPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA418AC8679BFF5F32A7889 /* WideMiniPlayerPanel.swift */; };
 		BEB4C40370B59635C52F7167 /* StereoProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5835C1574661E3C4BD34ECC /* StereoProcessor.swift */; };
 		BF3242F847CADBAA46B49FFB /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 140747B461AB44CC8B81434D /* PreferencesView.swift */; };
+		BFE030BDDBE33B243AF60D37 /* IOProc.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CD2E8BD28AFFDFA4270303D /* IOProc.swift */; };
+		CB09FD9AC0137AD1EC9E0957 /* VisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33EFDC68BC90058CC9BE5587 /* VisualizerView.swift */; };
 		D14B916957581904A38F5045 /* AutoEQAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5CF58D09BBD75C07C008FC1 /* AutoEQAnalyzer.swift */; };
 		D89FBDF3A3DC72C16F019C68 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD6AE34DCD9C44FC8B4BF8A0 /* ContentView.swift */; };
+		DC21154448E41840426F481C /* WideMiniPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30ED41F1A4A58974D88BA493 /* WideMiniPlayerView.swift */; };
 		E0C72E2562A742A333061D7C /* Ether.icns in Resources */ = {isa = PBXBuildFile; fileRef = CEED83C9465A7A77E3D70655 /* Ether.icns */; };
 		E3FFC6C0A3735EF40E74BFC9 /* SpaceMono-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 39B84EE5419D71DBE3BC2BF5 /* SpaceMono-Bold.ttf */; };
 		E8FE5130BB02D90F3CF27D5B /* DriverCommunicator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81B5DF999DEB403CDD067C20 /* DriverCommunicator.swift */; };
@@ -61,11 +69,15 @@
 		07D20279CADA7E60FF56E2A9 /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = CoreAudio.framework; sourceTree = "<group>"; };
 		0815837A8E874D3E2438AF77 /* MasterGainStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasterGainStrip.swift; sourceTree = "<group>"; };
 		0C74B293F84C6E2A7097CE59 /* AdvancedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedView.swift; sourceTree = "<group>"; };
+		0CD2E8BD28AFFDFA4270303D /* IOProc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOProc.swift; sourceTree = "<group>"; };
 		140747B461AB44CC8B81434D /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
+		154C915D3839D3269B2ED66A /* EtherealWaveform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EtherealWaveform.swift; sourceTree = "<group>"; };
 		17CEF7F0CF99D7902B634C1C /* NowPlayingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingManager.swift; sourceTree = "<group>"; };
 		2258F6592852C465D67301C6 /* EQProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EQProfile.swift; sourceTree = "<group>"; };
 		23FB684C7750302A8E428202 /* MiniPlayerPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerPanel.swift; sourceTree = "<group>"; };
 		2C940473919965E61258BD67 /* BandDetailStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BandDetailStrip.swift; sourceTree = "<group>"; };
+		30ED41F1A4A58974D88BA493 /* WideMiniPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WideMiniPlayerView.swift; sourceTree = "<group>"; };
+		33EFDC68BC90058CC9BE5587 /* VisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualizerView.swift; sourceTree = "<group>"; };
 		35F189FA0F1BE08CCC9BDB56 /* EtherDriver.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = EtherDriver.h; sourceTree = "<group>"; };
 		39B84EE5419D71DBE3BC2BF5 /* SpaceMono-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SpaceMono-Bold.ttf"; sourceTree = "<group>"; };
 		3DABE779AC556B0658525BF3 /* SpaceMono-Italic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SpaceMono-Italic.ttf"; sourceTree = "<group>"; };
@@ -78,6 +90,7 @@
 		54BA776AC57C7DE3574FF3CB /* PeakMeterSide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeakMeterSide.swift; sourceTree = "<group>"; };
 		5DC10AAAAB3DF5E3DCEE1BC2 /* ExperimentalTuningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExperimentalTuningView.swift; sourceTree = "<group>"; };
 		6E118E571770242DECADB921 /* LoudnessMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoudnessMeter.swift; sourceTree = "<group>"; };
+		6F6133C094E55F7B3B275FE3 /* SystemAudioRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemAudioRouter.swift; sourceTree = "<group>"; };
 		6FDBC54B4D85901D3AB63E96 /* SpatialController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialController.swift; sourceTree = "<group>"; };
 		7CB929C46BE8B93107ED6C9F /* EngineManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineManager.swift; sourceTree = "<group>"; };
 		81B5DF999DEB403CDD067C20 /* DriverCommunicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverCommunicator.swift; sourceTree = "<group>"; };
@@ -86,6 +99,7 @@
 		9D28D698D467438AF89F956D /* WindowDragHandle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDragHandle.swift; sourceTree = "<group>"; };
 		9FEB53A6D91026EAAC16DD3A /* ReferenceMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReferenceMatcher.swift; sourceTree = "<group>"; };
 		A2F6372FD083C7D1224A3207 /* EtherDriver.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = EtherDriver.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
+		A3A9A956BA420F72230EF6B1 /* MiniVisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniVisualizerView.swift; sourceTree = "<group>"; };
 		A58AE8E1DBB9765F58547F7F /* EtherApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EtherApp.swift; sourceTree = "<group>"; };
 		A766B83C1D05FED65BA88D64 /* RingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RingBuffer.swift; sourceTree = "<group>"; };
 		AC7B34D642F03D2E8927A183 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = CoreFoundation.framework; sourceTree = "<group>"; };
@@ -93,6 +107,7 @@
 		B161BF497B3BBD5FBDC53392 /* ShortcutCheatsheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutCheatsheet.swift; sourceTree = "<group>"; };
 		B79363A01BFE076CB2FADE80 /* OnboardingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingCard.swift; sourceTree = "<group>"; };
 		B9BCB3001159ADD2DCC93896 /* ColorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorTheme.swift; sourceTree = "<group>"; };
+		BBA418AC8679BFF5F32A7889 /* WideMiniPlayerPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WideMiniPlayerPanel.swift; sourceTree = "<group>"; };
 		C354B264EE4368894839F645 /* MiniPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerView.swift; sourceTree = "<group>"; };
 		C6CC7403B2FC1BE412D74415 /* SuggestionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionPanel.swift; sourceTree = "<group>"; };
 		CB5317D16E2C667BA3CFE983 /* SpatialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialView.swift; sourceTree = "<group>"; };
@@ -118,6 +133,14 @@
 			files = (
 				91544976E18817E5F928A747 /* CoreFoundation.framework in Frameworks */,
 				0C2BB4286596D7440AC9B4E1 /* CoreAudio.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BA2E9B79F47427F33ED2397F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9E6C508414128A771F673E0B /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -175,18 +198,23 @@
 				FD6AE34DCD9C44FC8B4BF8A0 /* ContentView.swift */,
 				F649B47A671694C22F0318FB /* DesignSystem.swift */,
 				CBE97FA899ACA8E1B1B527A2 /* EQBandsView.swift */,
+				154C915D3839D3269B2ED66A /* EtherealWaveform.swift */,
 				5DC10AAAAB3DF5E3DCEE1BC2 /* ExperimentalTuningView.swift */,
 				CB5E11814DD0F2B8563B26AB /* MacroKnobsView.swift */,
 				0815837A8E874D3E2438AF77 /* MasterGainStrip.swift */,
 				4D50004256D3B6C6DDA5DBBD /* MenuBarContent.swift */,
 				23FB684C7750302A8E428202 /* MiniPlayerPanel.swift */,
 				C354B264EE4368894839F645 /* MiniPlayerView.swift */,
+				A3A9A956BA420F72230EF6B1 /* MiniVisualizerView.swift */,
 				B79363A01BFE076CB2FADE80 /* OnboardingCard.swift */,
 				54BA776AC57C7DE3574FF3CB /* PeakMeterSide.swift */,
 				140747B461AB44CC8B81434D /* PreferencesView.swift */,
 				B161BF497B3BBD5FBDC53392 /* ShortcutCheatsheet.swift */,
 				CB5317D16E2C667BA3CFE983 /* SpatialView.swift */,
 				C6CC7403B2FC1BE412D74415 /* SuggestionPanel.swift */,
+				33EFDC68BC90058CC9BE5587 /* VisualizerView.swift */,
+				BBA418AC8679BFF5F32A7889 /* WideMiniPlayerPanel.swift */,
+				30ED41F1A4A58974D88BA493 /* WideMiniPlayerView.swift */,
 				9D28D698D467438AF89F956D /* WindowDragHandle.swift */,
 			);
 			path = Views;
@@ -206,6 +234,7 @@
 				8855F9C1B05AE209E31D3877 /* EQController.swift */,
 				2258F6592852C465D67301C6 /* EQProfile.swift */,
 				D693C3444C6E601A07C466CF /* GlobalHotkeys.swift */,
+				0CD2E8BD28AFFDFA4270303D /* IOProc.swift */,
 				4A1CA42EC2A1C4E6D1FA5AC6 /* LaunchAtLogin.swift */,
 				6E118E571770242DECADB921 /* LoudnessMeter.swift */,
 				17CEF7F0CF99D7902B634C1C /* NowPlayingManager.swift */,
@@ -214,6 +243,7 @@
 				6FDBC54B4D85901D3AB63E96 /* SpatialController.swift */,
 				98E6FC736F23AD417BC8282F /* SpectrumAnalyzer.swift */,
 				D5835C1574661E3C4BD34ECC /* StereoProcessor.swift */,
+				6F6133C094E55F7B3B275FE3 /* SystemAudioRouter.swift */,
 			);
 			path = Audio;
 			sourceTree = "<group>";
@@ -263,6 +293,7 @@
 			buildPhases = (
 				323B40E78F933AC4FA916880 /* Sources */,
 				E561F6DF675FC588BC6CD018 /* Resources */,
+				BA2E9B79F47427F33ED2397F /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -270,6 +301,7 @@
 			);
 			name = Ether;
 			packageProductDependencies = (
+				EFF636577FD55EE2B708D289 /* Sparkle */,
 			);
 			productName = Ether;
 			productReference = 4C9C4AE4EBDA94AF4254CECD /* Ether.app */;
@@ -313,6 +345,9 @@
 			);
 			mainGroup = 6AC5C9095D8695641146F5F5;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F38BFD74EB27D3A2647389A3 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 237FD14765A291051C5353B0 /* Products */;
 			projectDirPath = "";
@@ -362,8 +397,10 @@
 				783733AED72409D6830ECC02 /* EQProfile.swift in Sources */,
 				B43B2573D794B9D357BF6440 /* EngineManager.swift in Sources */,
 				33D43830E270463441416B78 /* EtherApp.swift in Sources */,
+				861C791B53BD992ECDFA49AC /* EtherealWaveform.swift in Sources */,
 				596AD0A1C6FC26B00D1CB2E2 /* ExperimentalTuningView.swift in Sources */,
 				AA9596B664D6D76BF6E689E0 /* GlobalHotkeys.swift in Sources */,
+				BFE030BDDBE33B243AF60D37 /* IOProc.swift in Sources */,
 				6D8B3DFC1C2761EF6771A751 /* LaunchAtLogin.swift in Sources */,
 				34BC3E88A2F9DDEBCA0AB2C9 /* LoudnessMeter.swift in Sources */,
 				0FF6E8A32D7C674A6E0B7EF3 /* MacroKnobsView.swift in Sources */,
@@ -371,6 +408,7 @@
 				1244A7230612B07EBA24C979 /* MenuBarContent.swift in Sources */,
 				24E75EFB99DDC5C24A4EB1B4 /* MiniPlayerPanel.swift in Sources */,
 				7B2FF890FCAEC60342D2C212 /* MiniPlayerView.swift in Sources */,
+				509D52C6BF88899A970E148C /* MiniVisualizerView.swift in Sources */,
 				4B40296CF9A107E91AD5485B /* NowPlayingManager.swift in Sources */,
 				12E4CD439A3B063A6B595204 /* OnboardingCard.swift in Sources */,
 				705286FAAECC5F65AE4693BC /* PeakMeterSide.swift in Sources */,
@@ -383,6 +421,10 @@
 				00BD1DDC40881F3422D120DD /* SpectrumAnalyzer.swift in Sources */,
 				BEB4C40370B59635C52F7167 /* StereoProcessor.swift in Sources */,
 				65FBB51AB8668095DEA32573 /* SuggestionPanel.swift in Sources */,
+				35225D3C7DFA417951773DCE /* SystemAudioRouter.swift in Sources */,
+				CB09FD9AC0137AD1EC9E0957 /* VisualizerView.swift in Sources */,
+				B950B67A4B4579EC0F5D0FEC /* WideMiniPlayerPanel.swift in Sources */,
+				DC21154448E41840426F481C /* WideMiniPlayerView.swift in Sources */,
 				B82AB43D76B408D5701FA240 /* WindowDragHandle.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -467,7 +509,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = audio.ether.app;
 				PRODUCT_NAME = Ether;
 				SDKROOT = macosx;
@@ -487,7 +529,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = audio.ether.app;
 				PRODUCT_NAME = Ether;
 				SDKROOT = macosx;
@@ -577,7 +619,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = audio.ether.driver;
 				PRODUCT_NAME = EtherDriver;
 				SDKROOT = macosx;
@@ -605,7 +647,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.4;
 				PRODUCT_BUNDLE_IDENTIFIER = audio.ether.driver;
 				PRODUCT_NAME = EtherDriver;
 				SDKROOT = macosx;
@@ -645,6 +687,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		F38BFD74EB27D3A2647389A3 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		EFF636577FD55EE2B708D289 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F38BFD74EB27D3A2647389A3 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4D8DEB8D566E1C3C0D34BB3A /* Project object */;
 }
