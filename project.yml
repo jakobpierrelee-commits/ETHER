@@ -44,7 +44,7 @@ targets:
         NSMicrophoneUsageDescription: "Ether reads system audio through its audio driver to apply EQ processing."
         NSAppleEventsUsageDescription: "Ether reads now-playing info from Spotify and Music to display album art and track info in the mini player."
         ATSApplicationFontsPath: "Fonts/"
-        SUFeedURL: "https://raw.githubusercontent.com/jakobpierrelee-commits/ether.eq/main/appcast.xml"
+        SUFeedURL: "https://raw.githubusercontent.com/jakobpierrelee-commits/ETHER/main/appcast.xml"
         SUEnableAutomaticChecks: true
         SUPublicEDKey: "FHQHKY2LGzN2xFwv7Ig36oc9dmEhCQyA4UOngfmukKs="
 
