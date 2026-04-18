@@ -42,17 +42,16 @@ struct EtherApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .commands {
-            CommandGroup(after: .appInfo) {
-                Button("Check for Updates…") {
-                    appDelegate.updaterController.checkForUpdates(nil)
-                }
-            }
             CommandGroup(replacing: .appInfo) {
                 Button("About Ether") {
                     let alert = NSAlert()
                     alert.messageText = "Ether"
-                    alert.informativeText = "System Audio Equalizer\n\nv\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")\n\nBuilt on Core Audio HAL\nhttps://github.com/jakobpierrelee-commits/ether.eq"
+                    alert.informativeText = "System Audio Equalizer\n\nv\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")\n\nBuilt on Core Audio HAL\nhttps://github.com/jakobpierrelee-commits/ETHER"
                     alert.runModal()
+                }
+                Divider()
+                Button("Check for Updates…") {
+                    appDelegate.updaterController.checkForUpdates(nil)
                 }
             }
             CommandGroup(replacing: .undoRedo) {
