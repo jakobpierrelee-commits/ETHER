@@ -41,6 +41,25 @@ xcodebuild \
 APP="build/DerivedData/Build/Products/Release/Ether.app"
 VERSION=$(defaults read "$PWD/${APP}/Contents/Info" CFBundleShortVersionString)
 
+# ── Re-sign Sparkle internals inside-out (Xcode doesn't reach nested XPC/helper binaries) ──
+echo "→ Re-signing Sparkle framework internals…"
+SPARKLE="${APP}/Contents/Frameworks/Sparkle.framework/Versions/B"
+for binary in \
+  "${SPARKLE}/XPCServices/Downloader.xpc/Contents/MacOS/Downloader" \
+  "${SPARKLE}/XPCServices/Installer.xpc/Contents/MacOS/Installer" \
+  "${SPARKLE}/Autoupdate" \
+  "${SPARKLE}/Updater.app/Contents/MacOS/Updater"; do
+  codesign --force --sign "${DEV_ID}" --timestamp --options=runtime "$binary"
+done
+for bundle in \
+  "${SPARKLE}/XPCServices/Downloader.xpc" \
+  "${SPARKLE}/XPCServices/Installer.xpc" \
+  "${SPARKLE}/Updater.app" \
+  "${APP}/Contents/Frameworks/Sparkle.framework"; do
+  codesign --force --sign "${DEV_ID}" --timestamp --options=runtime "$bundle"
+done
+codesign --force --sign "${DEV_ID}" --timestamp --options=runtime "$APP"
+
 # ── Verify app signature ──────────────────────────────────────────────
 echo "→ Verifying app signature…"
 codesign --verify --deep --strict --verbose=1 "$APP"
@@ -87,12 +106,12 @@ ED_SIG=$(echo "$SIG_LINE" | grep -o 'sparkle:edSignature="[^"]*"' | cut -d'"' -f
 NEW_ITEM="        <item>
             <title>Version ${VERSION}</title>
             <pubDate>${TODAY}</pubDate>
-            <sparkle:releaseNotesLink>https://github.com/jakobpierrelee-commits/ether.eq/releases/tag/v${VERSION}</sparkle:releaseNotesLink>
+            <sparkle:releaseNotesLink>https://github.com/jakobpierrelee-commits/ETHER/releases/tag/v${VERSION}</sparkle:releaseNotesLink>
             <sparkle:version>${BUILD}</sparkle:version>
             <sparkle:shortVersionString>${VERSION}</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <enclosure
-                url=\"https://github.com/jakobpierrelee-commits/ether.eq/releases/download/v${VERSION}/Ether-${VERSION}.dmg\"
+                url=\"https://github.com/jakobpierrelee-commits/ETHER/releases/download/v${VERSION}/Ether-${VERSION}.dmg\"
                 sparkle:edSignature=\"${ED_SIG}\"
                 length=\"${DMG_SIZE}\"
                 type=\"application/octet-stream\"/>

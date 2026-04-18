@@ -7,6 +7,21 @@
         <language>en</language>
 
         <item>
+            <title>Version 1.2.0</title>
+            <pubDate>Sat, 18 Apr 2026 05:41:20 +0000</pubDate>
+            <sparkle:releaseNotesLink>https://github.com/jakobpierrelee-commits/ETHER/releases/tag/v1.2.0</sparkle:releaseNotesLink>
+            <sparkle:version>8</sparkle:version>
+            <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure
+                url="https://github.com/jakobpierrelee-commits/ETHER/releases/download/v1.2.0/Ether-1.2.0.dmg"
+                sparkle:edSignature="At/FzE/OyP0SJen8IKbRyUTZIuaMpLXsQC1FT7YPBPa9Wa3g+wVLo43j75MtKEpNWTDKqyjTtVUdca/tjfaRCw=="
+                length="3772945"
+                type="application/octet-stream"/>
+        </item>
+
+
+        <item>
             <title>Version 1.1.4</title>
             <pubDate>Thu, 17 Apr 2026 00:00:00 +0000</pubDate>
             <sparkle:releaseNotesLink>https://github.com/jakobpierrelee-commits/ETHER/releases/tag/v1.1.4</sparkle:releaseNotesLink>
