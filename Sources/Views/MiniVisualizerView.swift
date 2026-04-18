@@ -25,6 +25,10 @@ struct MiniVisualizerView: View {
     @State private var env1 = [Float](repeating: 0, count: 64)
     @State private var bassEnergy: Double = 0
     @State private var kickFast: Double = 0
+    @State private var overallEnergy: Double = 0
+    @State private var spectralCentroid: Double = 0.5
+    @State private var spectralFlux: Double = 0
+    @State private var prevBins: [Float] = []
     @State private var rotation: Double = 0
     @State private var breathPhase: Double = 0
     @State private var particles: [FloatParticle] = MiniVisualizerView.makeParticles()
@@ -172,7 +176,7 @@ struct MiniVisualizerView: View {
                 }
 
                 // — Center orb: purely soft, no hard edges anywhere —
-                let cr = CGFloat(half) * CGFloat(0.070 + bassEnergy * 0.040 + kickFast * 0.095)
+                let cr = CGFloat(half) * CGFloat(0.060 + bassEnergy * 0.035 + overallEnergy * 0.020 + kickFast * 0.090)
 
                 func orb(_ radius: CGFloat) -> Path {
                     Path(ellipseIn: CGRect(x: cx - radius, y: cy - radius,
@@ -196,8 +200,31 @@ struct MiniVisualizerView: View {
                 let bins = analyzer.magnitudes
                 guard bins.count > kickBinHi else { return }
 
-                rotation += 0.007
-                breathPhase += 0.006
+                // Overall energy (mix loudness → animation intensity)
+                let allAvg = Double(bins.reduce(0, +)) / Double(bins.count)
+                let newOverall = max(0.0, min(1.0, (allAvg + 60) / 45))
+                overallEnergy = overallEnergy * 0.92 + newOverall * 0.08
+
+                // Spectral centroid (0=bass-heavy/dark, 1=treble-heavy/bright)
+                var weightedIdx = 0.0, totalW = 0.0
+                for i in bins.indices {
+                    let w = max(0.0, Double(bins[i]) + 80)
+                    weightedIdx += Double(i) * w
+                    totalW += w
+                }
+                let newCentroid = totalW > 0 ? weightedIdx / (totalW * Double(bins.count)) : 0.5
+                spectralCentroid = spectralCentroid * 0.985 + newCentroid * 0.015
+
+                // Spectral flux (frame-to-frame change → dynamism/chaos)
+                if prevBins.count == bins.count {
+                    let flux = zip(prevBins, bins).reduce(0.0) { $0 + Double(abs($1.0 - $1.1)) } / Double(bins.count)
+                    spectralFlux = spectralFlux * 0.88 + min(1.0, flux / 4.0) * 0.12
+                }
+                prevBins = Array(bins)
+
+                // Vibe-adaptive speeds: silence barely drifts, energetic/dynamic tracks spin
+                rotation += 0.003 + overallEnergy * 0.007 + spectralFlux * 0.005
+                breathPhase += 0.003 + overallEnergy * 0.004 + spectralCentroid * 0.003
 
                 // Adaptive decay: fast when active, slow toward silence
                 var next0 = env0, next1 = env1
