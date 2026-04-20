@@ -2,6 +2,18 @@ import SwiftUI
 import AppKit
 import Sparkle
 
+struct VisualizerCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+    var body: some Commands {
+        CommandMenu("Visualizer") {
+            Button("Ring Visualizer") { openWindow(id: "visualizer") }
+                .keyboardShortcut("v", modifiers: .command)
+            Button("Sphere Visualizer") { openWindow(id: "sphere") }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+        }
+    }
+}
+
 @main
 struct EtherApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -71,6 +83,7 @@ struct EtherApp: App {
                 Button("Reset to Flat") { eqController.reset() }
                     .keyboardShortcut("0", modifiers: .command)
             }
+            VisualizerCommands()
             CommandGroup(replacing: .help) {
                 Button("Keyboard Shortcuts") {
                     NotificationCenter.default.post(name: .showShortcuts, object: nil)
@@ -106,6 +119,14 @@ struct EtherApp: App {
                 .environmentObject(engineManager)
         }
         .defaultSize(width: 900, height: 600)
+        .windowStyle(.hiddenTitleBar)
+
+        // ── Sphere visualizer ──────────────────────────────────────────────
+        Window("Ether — Sphere", id: "sphere") {
+            SphereVisualizerWindowView()
+                .environmentObject(engineManager)
+        }
+        .defaultSize(width: 800, height: 800)
         .windowStyle(.hiddenTitleBar)
 
         // ── Menu bar popover ────────────────────────────────────────────

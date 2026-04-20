@@ -22,6 +22,7 @@
 		34BC3E88A2F9DDEBCA0AB2C9 /* LoudnessMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E118E571770242DECADB921 /* LoudnessMeter.swift */; };
 		35225D3C7DFA417951773DCE /* SystemAudioRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F6133C094E55F7B3B275FE3 /* SystemAudioRouter.swift */; };
 		37309F43F38EE1802B6E5C23 /* ShortcutCheatsheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B161BF497B3BBD5FBDC53392 /* ShortcutCheatsheet.swift */; };
+		3D7F4A94724EB01C143F1F8F /* SphereVisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A87DA7FCCD034B7B292E21 /* SphereVisualizerView.swift */; };
 		49CC1B5039E8113277474047 /* SpaceMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FCDD102265DA198D7C5BA7D5 /* SpaceMono-Regular.ttf */; };
 		4B40296CF9A107E91AD5485B /* NowPlayingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17CEF7F0CF99D7902B634C1C /* NowPlayingManager.swift */; };
 		509D52C6BF88899A970E148C /* MiniVisualizerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3A9A956BA420F72230EF6B1 /* MiniVisualizerView.swift */; };
@@ -109,6 +110,7 @@
 		B9BCB3001159ADD2DCC93896 /* ColorTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorTheme.swift; sourceTree = "<group>"; };
 		BBA418AC8679BFF5F32A7889 /* WideMiniPlayerPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WideMiniPlayerPanel.swift; sourceTree = "<group>"; };
 		C354B264EE4368894839F645 /* MiniPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayerView.swift; sourceTree = "<group>"; };
+		C3A87DA7FCCD034B7B292E21 /* SphereVisualizerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SphereVisualizerView.swift; sourceTree = "<group>"; };
 		C6CC7403B2FC1BE412D74415 /* SuggestionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionPanel.swift; sourceTree = "<group>"; };
 		CB5317D16E2C667BA3CFE983 /* SpatialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpatialView.swift; sourceTree = "<group>"; };
 		CB5E11814DD0F2B8563B26AB /* MacroKnobsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacroKnobsView.swift; sourceTree = "<group>"; };
@@ -211,6 +213,7 @@
 				140747B461AB44CC8B81434D /* PreferencesView.swift */,
 				B161BF497B3BBD5FBDC53392 /* ShortcutCheatsheet.swift */,
 				CB5317D16E2C667BA3CFE983 /* SpatialView.swift */,
+				C3A87DA7FCCD034B7B292E21 /* SphereVisualizerView.swift */,
 				C6CC7403B2FC1BE412D74415 /* SuggestionPanel.swift */,
 				33EFDC68BC90058CC9BE5587 /* VisualizerView.swift */,
 				BBA418AC8679BFF5F32A7889 /* WideMiniPlayerPanel.swift */,
@@ -419,6 +422,7 @@
 				A7A15E1EDD30A0B78A780C05 /* SpatialController.swift in Sources */,
 				B7AE531349200BF0DBBA0CD6 /* SpatialView.swift in Sources */,
 				00BD1DDC40881F3422D120DD /* SpectrumAnalyzer.swift in Sources */,
+				3D7F4A94724EB01C143F1F8F /* SphereVisualizerView.swift in Sources */,
 				BEB4C40370B59635C52F7167 /* StereoProcessor.swift in Sources */,
 				65FBB51AB8668095DEA32573 /* SuggestionPanel.swift in Sources */,
 				35225D3C7DFA417951773DCE /* SystemAudioRouter.swift in Sources */,
