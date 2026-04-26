@@ -19,7 +19,9 @@ enum {
     kEtherOutputMuteControlObjectID   = 7,
 };
 
-static const Float32 kEtherVolumeMinDb = -96.0f;
+// dB range matches BlackHole's convention so apps using the slider get
+// consistent perceptual stepping.
+static const Float32 kEtherVolumeMinDb = -64.0f;
 static const Float32 kEtherVolumeMaxDb = 0.0f;
 
 // ─── Device Properties ──────────────────────────────────────────────────────

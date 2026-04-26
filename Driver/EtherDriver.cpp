@@ -395,6 +395,15 @@ static OSStatus Ether_IsPropertySettable(AudioServerPlugInDriverRef driver, Audi
     if (address->mSelector == kEtherEQParametersProperty) {
         *outIsSettable = true;
     }
+    if (objectID == kEtherOutputVolumeControlObjectID &&
+        (address->mSelector == kAudioLevelControlPropertyScalarValue ||
+         address->mSelector == kAudioLevelControlPropertyDecibelValue)) {
+        *outIsSettable = true;
+    }
+    if (objectID == kEtherOutputMuteControlObjectID &&
+        address->mSelector == kAudioBooleanControlPropertyValue) {
+        *outIsSettable = true;
+    }
     return kAudioHardwareNoError;
 }
 
@@ -475,8 +484,11 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
                 RETURN_SIZE(UInt32);
 
             case kAudioObjectPropertyControlList:
-                // TEMP: disconnected while we debug the coreaudiod wedge.
-                *outDataSize = 0;
+                // 2 controls (volume + mute), output scope only.
+                if (address->mScope == kAudioObjectPropertyScopeInput)
+                    *outDataSize = 0;
+                else
+                    *outDataSize = 2 * sizeof(AudioObjectID);
                 return kAudioHardwareNoError;
 
             case kAudioObjectPropertyCustomPropertyInfoList:
@@ -511,9 +523,11 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
                 return kAudioHardwareNoError;
 
             case kAudioObjectPropertyOwnedObjects:
-                // 1 stream per direction, 2 for global. Controls disconnected for now.
+                // global: 2 streams + 2 controls; output: stream + 2 controls; input: stream
                 if (address->mScope == kAudioObjectPropertyScopeGlobal)
-                    *outDataSize = 2 * sizeof(AudioObjectID);
+                    *outDataSize = 4 * sizeof(AudioObjectID);
+                else if (address->mScope == kAudioObjectPropertyScopeOutput)
+                    *outDataSize = 3 * sizeof(AudioObjectID);
                 else
                     *outDataSize = sizeof(AudioObjectID);
                 return kAudioHardwareNoError;
@@ -574,6 +588,46 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
             default:
                 *outDataSize = 0;
                 return kAudioHardwareUnknownPropertyError;
+        }
+    }
+
+    // ── Volume Control ──
+    if (objectID == kEtherOutputVolumeControlObjectID) {
+        switch (address->mSelector) {
+            case kAudioObjectPropertyBaseClass:
+            case kAudioObjectPropertyClass:
+            case kAudioObjectPropertyOwner:
+            case kAudioControlPropertyScope:
+            case kAudioControlPropertyElement:
+                RETURN_SIZE(UInt32);
+            case kAudioLevelControlPropertyScalarValue:
+            case kAudioLevelControlPropertyDecibelValue:
+            case kAudioLevelControlPropertyConvertScalarToDecibels:
+            case kAudioLevelControlPropertyConvertDecibelsToScalar:
+                RETURN_SIZE(Float32);
+            case kAudioLevelControlPropertyDecibelRange:
+                *outDataSize = sizeof(AudioValueRange); return kAudioHardwareNoError;
+            case kAudioObjectPropertyOwnedObjects:
+            case kAudioObjectPropertyCustomPropertyInfoList:
+                *outDataSize = 0; return kAudioHardwareNoError;
+            default: *outDataSize = 0; return kAudioHardwareUnknownPropertyError;
+        }
+    }
+
+    // ── Mute Control ──
+    if (objectID == kEtherOutputMuteControlObjectID) {
+        switch (address->mSelector) {
+            case kAudioObjectPropertyBaseClass:
+            case kAudioObjectPropertyClass:
+            case kAudioObjectPropertyOwner:
+            case kAudioControlPropertyScope:
+            case kAudioControlPropertyElement:
+            case kAudioBooleanControlPropertyValue:
+                RETURN_SIZE(UInt32);
+            case kAudioObjectPropertyOwnedObjects:
+            case kAudioObjectPropertyCustomPropertyInfoList:
+                *outDataSize = 0; return kAudioHardwareNoError;
+            default: *outDataSize = 0; return kAudioHardwareUnknownPropertyError;
         }
     }
 
@@ -766,21 +820,38 @@ static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
                 if (address->mScope == kAudioObjectPropertyScopeInput) {
                     RETURN_OBJECTID(kEtherInputStreamObjectID);
                 } else if (address->mScope == kAudioObjectPropertyScopeOutput) {
-                    RETURN_OBJECTID(kEtherOutputStreamObjectID);
+                    if (inDataSize < 3 * sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
+                    *outDataSize = 3 * sizeof(AudioObjectID);
+                    AudioObjectID* ids = (AudioObjectID*)outData;
+                    ids[0] = kEtherOutputStreamObjectID;
+                    ids[1] = kEtherOutputVolumeControlObjectID;
+                    ids[2] = kEtherOutputMuteControlObjectID;
+                    return kAudioHardwareNoError;
                 } else {
-                    if (inDataSize < 2 * sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
-                    *outDataSize = 2 * sizeof(AudioObjectID);
+                    if (inDataSize < 4 * sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
+                    *outDataSize = 4 * sizeof(AudioObjectID);
                     AudioObjectID* ids = (AudioObjectID*)outData;
                     ids[0] = kEtherInputStreamObjectID;
                     ids[1] = kEtherOutputStreamObjectID;
+                    ids[2] = kEtherOutputVolumeControlObjectID;
+                    ids[3] = kEtherOutputMuteControlObjectID;
                     return kAudioHardwareNoError;
                 }
             }
 
-            case kAudioObjectPropertyControlList:
-                // TEMP: disconnected while we debug the coreaudiod wedge.
-                *outDataSize = 0;
+            case kAudioObjectPropertyControlList: {
+                // 2 controls (volume + mute), output scope only.
+                if (address->mScope == kAudioObjectPropertyScopeInput) {
+                    *outDataSize = 0;
+                    return kAudioHardwareNoError;
+                }
+                if (inDataSize < 2 * sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
+                *outDataSize = 2 * sizeof(AudioObjectID);
+                AudioObjectID* ids = (AudioObjectID*)outData;
+                ids[0] = kEtherOutputVolumeControlObjectID;
+                ids[1] = kEtherOutputMuteControlObjectID;
                 return kAudioHardwareNoError;
+            }
 
             case kAudioObjectPropertyCustomPropertyInfoList: {
                 if (inDataSize < sizeof(AudioServerPlugInCustomPropertyInfo))
@@ -847,10 +918,122 @@ static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
         }
     }
 
+    // ── Volume Control Data ──
+    if (objectID == kEtherOutputVolumeControlObjectID) {
+        switch (address->mSelector) {
+            case kAudioObjectPropertyBaseClass:    RETURN_UINT32(kAudioLevelControlClassID);
+            case kAudioObjectPropertyClass:        RETURN_UINT32(kAudioVolumeControlClassID);
+            case kAudioObjectPropertyOwner:        RETURN_OBJECTID(kEtherDeviceObjectID);
+            case kAudioControlPropertyScope:       RETURN_UINT32(kAudioObjectPropertyScopeOutput);
+            case kAudioControlPropertyElement:     RETURN_UINT32(kAudioObjectPropertyElementMain);
+            case kAudioObjectPropertyOwnedObjects:
+            case kAudioObjectPropertyCustomPropertyInfoList:
+                *outDataSize = 0; return kAudioHardwareNoError;
+            case kAudioLevelControlPropertyScalarValue: {
+                if (inDataSize < sizeof(Float32)) return kAudioHardwareBadPropertySizeError;
+                *outDataSize = sizeof(Float32);
+                *(Float32*)outData = sDriverState->volume;
+                return kAudioHardwareNoError;
+            }
+            case kAudioLevelControlPropertyDecibelValue: {
+                if (inDataSize < sizeof(Float32)) return kAudioHardwareBadPropertySizeError;
+                *outDataSize = sizeof(Float32);
+                *(Float32*)outData = ScalarToDb(sDriverState->volume);
+                return kAudioHardwareNoError;
+            }
+            case kAudioLevelControlPropertyDecibelRange: {
+                if (inDataSize < sizeof(AudioValueRange)) return kAudioHardwareBadPropertySizeError;
+                *outDataSize = sizeof(AudioValueRange);
+                AudioValueRange* r = (AudioValueRange*)outData;
+                r->mMinimum = kEtherVolumeMinDb;
+                r->mMaximum = kEtherVolumeMaxDb;
+                return kAudioHardwareNoError;
+            }
+            case kAudioLevelControlPropertyConvertScalarToDecibels: {
+                if (inDataSize < sizeof(Float32)) return kAudioHardwareBadPropertySizeError;
+                *outDataSize = sizeof(Float32);
+                *(Float32*)outData = ScalarToDb(*(Float32*)outData);
+                return kAudioHardwareNoError;
+            }
+            case kAudioLevelControlPropertyConvertDecibelsToScalar: {
+                if (inDataSize < sizeof(Float32)) return kAudioHardwareBadPropertySizeError;
+                *outDataSize = sizeof(Float32);
+                *(Float32*)outData = DbToScalar(*(Float32*)outData);
+                return kAudioHardwareNoError;
+            }
+            default: return kAudioHardwareUnknownPropertyError;
+        }
+    }
+
+    // ── Mute Control Data ──
+    if (objectID == kEtherOutputMuteControlObjectID) {
+        switch (address->mSelector) {
+            case kAudioObjectPropertyBaseClass:        RETURN_UINT32(kAudioBooleanControlClassID);
+            case kAudioObjectPropertyClass:            RETURN_UINT32(kAudioMuteControlClassID);
+            case kAudioObjectPropertyOwner:            RETURN_OBJECTID(kEtherDeviceObjectID);
+            case kAudioControlPropertyScope:           RETURN_UINT32(kAudioObjectPropertyScopeOutput);
+            case kAudioControlPropertyElement:         RETURN_UINT32(kAudioObjectPropertyElementMain);
+            case kAudioObjectPropertyOwnedObjects:
+            case kAudioObjectPropertyCustomPropertyInfoList:
+                *outDataSize = 0; return kAudioHardwareNoError;
+            case kAudioBooleanControlPropertyValue:    RETURN_UINT32(sDriverState->muted ? 1 : 0);
+            default: return kAudioHardwareUnknownPropertyError;
+        }
+    }
+
     return kAudioHardwareUnknownPropertyError;
 }
 
 static OSStatus Ether_SetPropertyData(AudioServerPlugInDriverRef driver, AudioObjectID objectID, pid_t clientPID, const AudioObjectPropertyAddress* address, UInt32 qualifierDataSize, const void* qualifierData, UInt32 inDataSize, const void* inData) {
+
+    // ── Volume Control SET (with equality guard — see BlackHole's strategy) ──
+    // BlackHole's pattern: if newValue == oldValue, return noErr WITHOUT firing
+    // PropertiesChanged. This breaks the cascade where macOS Sound prefs reads
+    // the new value, decides to "confirm" it by writing it back, and our
+    // unconditional notification triggers another read → infinite loop.
+    if (objectID == kEtherOutputVolumeControlObjectID) {
+        if (inDataSize < sizeof(Float32) || inData == nullptr) return kAudioHardwareBadPropertySizeError;
+        Float32 newScalar;
+        if (address->mSelector == kAudioLevelControlPropertyScalarValue) {
+            newScalar = *(const Float32*)inData;
+            if (newScalar < 0.0f) newScalar = 0.0f; else if (newScalar > 1.0f) newScalar = 1.0f;
+        } else if (address->mSelector == kAudioLevelControlPropertyDecibelValue) {
+            newScalar = DbToScalar(*(const Float32*)inData);
+        } else {
+            return kAudioHardwareUnknownPropertyError;
+        }
+        // EQUALITY GUARD — do nothing if value unchanged (loop-breaker)
+        if (sDriverState->volume == newScalar) return kAudioHardwareNoError;
+        sDriverState->volume = newScalar;
+        // Notify both Scalar and Decibel selectors at scope=Global, element=Main
+        // (BlackHole pattern; pre-empts a follow-up read of the other representation)
+        if (sDriverState->host) {
+            AudioObjectPropertyAddress addrs[2] = {
+                { kAudioLevelControlPropertyScalarValue,  kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain },
+                { kAudioLevelControlPropertyDecibelValue, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain },
+            };
+            sDriverState->host->PropertiesChanged(sDriverState->host,
+                                                  kEtherOutputVolumeControlObjectID, 2, addrs);
+        }
+        return kAudioHardwareNoError;
+    }
+
+    // ── Mute Control SET (with equality guard) ──
+    if (objectID == kEtherOutputMuteControlObjectID &&
+        address->mSelector == kAudioBooleanControlPropertyValue) {
+        if (inDataSize < sizeof(UInt32) || inData == nullptr) return kAudioHardwareBadPropertySizeError;
+        bool newMuted = (*(const UInt32*)inData) != 0;
+        if (sDriverState->muted == newMuted) return kAudioHardwareNoError;
+        sDriverState->muted = newMuted;
+        if (sDriverState->host) {
+            AudioObjectPropertyAddress addr = {
+                kAudioBooleanControlPropertyValue, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain
+            };
+            sDriverState->host->PropertiesChanged(sDriverState->host,
+                                                  kEtherOutputMuteControlObjectID, 1, &addr);
+        }
+        return kAudioHardwareNoError;
+    }
 
     if (objectID == kEtherDeviceObjectID && address->mSelector == kEtherEQParametersProperty) {
         if (inDataSize < sizeof(CFDataRef) || inData == nullptr) {
