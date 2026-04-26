@@ -221,7 +221,9 @@ struct PreferencesView: View {
 
             if launchAtLogin.statusDescription.contains("approval") {
                 Button("Open System Settings → Login Items") {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension")!)
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
                 }
                 .font(.etherMono(9))
                 .buttonStyle(.plain)
@@ -239,7 +241,7 @@ struct PreferencesView: View {
             Text("Ether · System Audio Equalizer")
                 .font(.etherMono(10))
                 .foregroundColor(.etherTextSecondary)
-            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") · BlackHole 2ch · 32-bit float · 48 kHz")
+            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") · Ether driver · 32-bit float · 48 kHz")
                 .font(.etherValue(9))
                 .foregroundColor(.etherTextTertiary)
         }

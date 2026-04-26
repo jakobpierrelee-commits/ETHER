@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct AboutView: View {
+    private static let blackHoleURL = URL(string: "https://github.com/ExistentialAudio/BlackHole")!
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }
@@ -44,7 +45,7 @@ struct AboutView: View {
                     .tracking(1.4)
                     .foregroundColor(.etherTextTertiary)
 
-                Link(destination: URL(string: "https://github.com/ExistentialAudio/BlackHole")!) {
+                Link(destination: Self.blackHoleURL) {
                     HStack(spacing: 4) {
                         Text("BlackHole")
                             .font(.etherMono(11, weight: .medium))

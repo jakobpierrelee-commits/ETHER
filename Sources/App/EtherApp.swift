@@ -14,6 +14,16 @@ struct VisualizerCommands: Commands {
     }
 }
 
+struct SkinCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+    var body: some Commands {
+        CommandMenu("Skins") {
+            Button("Ethereal (preview)") { openWindow(id: "ethereal") }
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+        }
+    }
+}
+
 @main
 struct EtherApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -35,7 +45,7 @@ struct EtherApp: App {
                     appDelegate.engineManager = engineManager
                     eqController.engine = engineManager
                     engineManager.controller = eqController
-                    engineManager.restoreOutputIfStuckOnBlackHole()
+                    engineManager.restoreOutputIfStuckOnVirtual()
                     if let id = profileStore.currentProfileID,
                        let profile = profileStore.profiles.first(where: { $0.id == id }) {
                         eqController.load(bands: profile.eqBands, masterGain: profile.masterGain, knobValues: profile.knobValues ?? [:])
@@ -84,6 +94,7 @@ struct EtherApp: App {
                     .keyboardShortcut("0", modifiers: .command)
             }
             VisualizerCommands()
+            SkinCommands()
             CommandGroup(replacing: .help) {
                 Button("Keyboard Shortcuts") {
                     NotificationCenter.default.post(name: .showShortcuts, object: nil)
@@ -129,6 +140,13 @@ struct EtherApp: App {
         .defaultSize(width: 800, height: 800)
         .windowStyle(.hiddenTitleBar)
 
+        // ── Ethereal skin (dev spike) ──────────────────────────────────────
+        Window("Ether — Ethereal", id: "ethereal") {
+            EtherealSkinView()
+        }
+        .defaultSize(width: 960, height: 680)
+        .windowStyle(.hiddenTitleBar)
+
         // ── Menu bar popover ────────────────────────────────────────────
         MenuBarExtra("Ether", systemImage: "waveform") {
             MenuBarContent(controller: eqController, profileStore: profileStore)
@@ -153,6 +171,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updaterDelegate: nil,
         userDriverDelegate: nil
     )
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        let others = NSRunningApplication.runningApplications(
+            withBundleIdentifier: Bundle.main.bundleIdentifier ?? ""
+        ).filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+
+        if let existing = others.first {
+            existing.activate(options: .activateIgnoringOtherApps)
+            NSApp.terminate(nil)
+        }
+    }
 
     func applicationWillTerminate(_ notification: Notification) {
         engineManager?.emergencyRestore()

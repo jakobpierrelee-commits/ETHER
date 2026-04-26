@@ -12,7 +12,8 @@ private extension URLSession {
             semaphore.signal()
         }.resume()
         semaphore.wait()
-        return try result!.get()
+        guard let result else { throw URLError(.unknown) }
+        return try result.get()
     }
 }
 

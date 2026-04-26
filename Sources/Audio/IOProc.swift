@@ -59,8 +59,9 @@ let etherIOProc: AudioDeviceIOProc = { _, _, inInputData, _, _, _, clientData in
             scratch[f * 2 + 1] = dataR[f]
         }
         scratch.withUnsafeBufferPointer { ptr in
-            ctx.ring.write(src: ptr.baseAddress!, count: copyFrames)
-            ctx.analyzerRing.write(src: ptr.baseAddress!, count: copyFrames)
+            guard let base = ptr.baseAddress else { return }
+            ctx.ring.write(src: base, count: copyFrames)
+            ctx.analyzerRing.write(src: base, count: copyFrames)
         }
     }
     return noErr

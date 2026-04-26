@@ -470,10 +470,10 @@ struct ContentView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundColor(.etherWarning)
             VStack(alignment: .leading, spacing: 2) {
-                Text("BlackHole 2ch required")
+                Text("Ether driver not installed")
                     .font(.etherMono(11, weight: .semibold))
                     .foregroundColor(.etherWarning)
-                Text("brew install blackhole-2ch")
+                Text("Run install-driver.sh from the project root")
                     .font(.etherMono(10))
                     .foregroundColor(.etherTextSecondary)
             }

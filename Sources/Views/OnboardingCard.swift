@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// One-time onboarding overlay explaining the BlackHole dependency + setup.
+/// One-time onboarding overlay explaining driver setup.
 /// Shown on first launch until dismissed; persists dismissal in UserDefaults.
 struct OnboardingCard: View {
     @Binding var isPresented: Bool
@@ -31,10 +31,10 @@ struct OnboardingCard: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 VStack(alignment: .leading, spacing: 14) {
-                    step(1, title: "Install BlackHole 2ch", body: "Ether reads system audio via the BlackHole virtual audio driver.",
-                         hint: "brew install blackhole-2ch")
+                    step(1, title: "Install the Ether driver", body: "Ether ships its own virtual audio driver — system audio routes through it for processing.",
+                         hint: "Run install-driver.sh from the project")
                     step(2, title: "Select your speakers in Ether", body: "Pick your real output device from the Output dropdown at the top of the window.")
-                    step(3, title: "Press Start", body: "Ether will switch your system output to BlackHole automatically, process through the EQ, and play through your speakers.")
+                    step(3, title: "Press Start", body: "Ether will route system audio through its virtual driver, process through the EQ, and play through your speakers.")
                     step(4, title: "Tune your sound", body: "Drag the EQ handles, or use the Character knobs (Bass, Warmth, Clarity, Presence, Air) for quick sculpting. Save profiles for later.")
                 }
 

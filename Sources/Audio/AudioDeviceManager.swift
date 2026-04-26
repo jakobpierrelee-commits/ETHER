@@ -50,6 +50,7 @@ enum AudioDeviceManager {
             device.hasOutput
             && !device.name.contains("BlackHole")
             && !device.name.contains("KlipschEQ")
+            && device.uid != DriverCommunicator.driverDeviceUID
         }
     }
 

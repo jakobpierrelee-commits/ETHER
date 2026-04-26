@@ -18,7 +18,7 @@ enum EngineStatus: Equatable {
         case .starting:             return "Starting…"
         case .running:              return "Running"
         case .error(let m):         return "Error: \(m)"
-        case .driverNotInstalled:   return "BlackHole not installed"
+        case .driverNotInstalled:   return "Ether driver not installed"
         }
     }
 
@@ -27,11 +27,11 @@ enum EngineStatus: Equatable {
 
 // MARK: - EngineManager
 
-/// Reads from BlackHole (system output → BlackHole) via AVAudioEngine inputNode tap,
+/// Reads from the Ether virtual driver (system output → Ether) via HAL IOProc,
 /// processes through 10-band EQ, writes to the user's physical speakers.
 ///
 /// Flow:
-///   System Audio → BlackHole → Input Engine (installTap) → PlayerNode (Output Engine) → EQ → CalDigit
+///   System Audio → Ether driver → HAL IOProc → ring buffer → EQ → physical output
 final class EngineManager: ObservableObject {
 
     private let logger = Logger(subsystem: "audio.ether.app", category: "EngineManager")
@@ -59,10 +59,10 @@ final class EngineManager: ObservableObject {
     /// ITU-R BS.1770 loudness meter, fed from the post-EQ signal.
     let loudness = LoudnessMeter()
 
-    // Raw HAL I/O proc on BlackHole — bypasses AVFoundation's microphone permission
-    // so no orange "in use" indicator appears in the menu bar.
-    private var blackHoleDeviceID: AudioDeviceID = kAudioObjectUnknown
-    private var blackHoleProcID: AudioDeviceIOProcID?
+    // Raw HAL I/O proc on the Ether virtual driver — bypasses AVFoundation's
+    // microphone permission so no orange "in use" indicator appears.
+    private var captureDeviceID: AudioDeviceID = kAudioObjectUnknown
+    private var captureProcID: AudioDeviceIOProcID?
 
     // Side-channel ring buffer for the spectrum analyzer.
     // The HAL I/O proc writes here atomically; a main-thread timer reads + feeds the analyzer.
@@ -73,7 +73,7 @@ final class EngineManager: ObservableObject {
     /// onto the freshly-created AVAudioUnitEQ node whenever the engine starts.
     weak var controller: EQController?
 
-    /// Pre-EQ spectrum (raw system audio from BlackHole).
+    /// Pre-EQ spectrum (raw system audio from the Ether driver).
     let spectrum = SpectrumAnalyzer()
 
     /// Post-EQ spectrum (what's actually being sent to the speakers).
@@ -138,17 +138,29 @@ final class EngineManager: ObservableObject {
             )
         }
         outputEngine?.stop()
-        if let procID = blackHoleProcID, blackHoleDeviceID != kAudioObjectUnknown {
-            AudioDeviceStop(blackHoleDeviceID, procID)
+        if let procID = captureProcID, captureDeviceID != kAudioObjectUnknown {
+            AudioDeviceStop(captureDeviceID, procID)
         }
     }
 
     func start() {
-        guard let outputDevice = selectedOutputDevice else {
+        guard let cachedOutput = selectedOutputDevice else {
             status = .error("No output device selected")
             return
         }
-        guard let blackHoleID = DriverCommunicator.findEtherDevice() else {
+        // Re-resolve the output device by UID — its AudioDeviceID can shift after
+        // coreaudiod restarts (e.g. driver install/uninstall, sleep/wake).
+        let outputDevice: AudioDevice = {
+            if let fresh = AudioDeviceManager.allDevices().first(where: { $0.uid == cachedOutput.uid }) {
+                return fresh
+            }
+            return cachedOutput
+        }()
+        // Sync selection back so the UI reflects the live ID.
+        if outputDevice.id != cachedOutput.id {
+            selectedOutputDevice = outputDevice
+        }
+        guard let captureID = DriverCommunicator.findEtherDevice() else {
             status = .driverNotInstalled
             return
         }
@@ -159,18 +171,18 @@ final class EngineManager: ObservableObject {
 
         // Persist the device UID so we can recover across crashes
         if let prevID = previousDefaultOutputDeviceID,
-           prevID != blackHoleID,
+           prevID != captureID,
            let prevUID = AudioDeviceManager.deviceUID(for: prevID) {
             UserDefaults.standard.set(prevUID, forKey: SystemAudioRouter.lastGoodOutputKey)
         }
 
-        // Route system audio to BlackHole so it flows through our EQ
-        if !SystemAudioRouter.setDefaultOutputDevice(blackHoleID) {
-            logger.warning("Could not switch system output to BlackHole — user may need to do it manually")
+        // Route system audio to the Ether driver so it flows through our EQ
+        if !SystemAudioRouter.setDefaultOutputDevice(captureID) {
+            logger.warning("Could not switch system output to Ether driver — user may need to do it manually")
         }
 
         do {
-            try buildAndStart(blackHoleID: blackHoleID, outputDevice: outputDevice)
+            try buildAndStart(captureID: captureID, outputDevice: outputDevice)
 
             // Push the controller's saved profile state onto the fresh EQ node
             // so the user doesn't have to nudge a control to wake it up.
@@ -185,7 +197,7 @@ final class EngineManager: ObservableObject {
             outputEngine?.mainMixerNode.outputVolume = 0
             fadeVolume(to: 1, duration: 0.05) {}
             outputDeviceName = outputDevice.name
-            inputDeviceName = "BlackHole 2ch"
+            inputDeviceName = "Ether"
             status = .running
         } catch {
             logger.error("Start failed: \(error.localizedDescription, privacy: .public)")
@@ -241,16 +253,16 @@ final class EngineManager: ObservableObject {
         }
     }
 
-    /// Safety net on launch: if system is currently routed to BlackHole AND we
-    /// have a persisted last-good device, restore it. Handles crash/force-quit
-    /// while routed to BlackHole. Delegates to SystemAudioRouter.
-    func restoreOutputIfStuckOnBlackHole() {
-        SystemAudioRouter.restoreOutputIfStuckOnBlackHole()
+    /// Safety net on launch: if system is currently routed to a virtual device
+    /// (our Ether driver or legacy BlackHole) AND we have a persisted last-good
+    /// device, restore it. Handles crash/force-quit while routed virtual.
+    func restoreOutputIfStuckOnVirtual() {
+        SystemAudioRouter.restoreOutputIfStuckOnVirtual()
     }
 
     // MARK: - Build / Teardown
 
-    private func buildAndStart(blackHoleID: AudioDeviceID, outputDevice: AudioDevice) throws {
+    private func buildAndStart(captureID: AudioDeviceID, outputDevice: AudioDevice) throws {
         teardown()
 
         // AVAudioEngine uses deinterleaved standard format internally
@@ -287,7 +299,8 @@ final class EngineManager: ObservableObject {
             // Pull interleaved from ring, deinterleave into the output buffers
             var interleaved = [Float](repeating: 0, count: frames * numChannels)
             interleaved.withUnsafeMutableBufferPointer { ptr in
-                _ = ring.read(dst: ptr.baseAddress!, count: frames)
+                guard let base = ptr.baseAddress else { return }
+                _ = ring.read(dst: base, count: frames)
             }
 
             for ch in 0..<numChannels {
@@ -371,16 +384,17 @@ final class EngineManager: ObservableObject {
                 }
             }
             interleaved.withUnsafeBufferPointer { ptr in
-                ring.write(src: ptr.baseAddress!, count: frames)
+                guard let base = ptr.baseAddress else { return }
+                ring.write(src: base, count: frames)
             }
         }
 
         logger.log("Output engine running on \(outputDevice.name, privacy: .public)")
 
-        // ── Input path: HAL IOProc on BlackHole ──────────────────────
+        // ── Input path: HAL IOProc on the Ether driver ───────────────
         // Using Core Audio HAL directly bypasses AVFoundation's microphone
         // permission system, so no orange "mic in use" indicator appears.
-        self.blackHoleDeviceID = blackHoleID
+        self.captureDeviceID = captureID
         let analyzerRing = FloatRingBuffer(capacityFrames: 8192, channelCount: 2)
         self.analyzerRingBuffer = analyzerRing
 
@@ -392,7 +406,7 @@ final class EngineManager: ObservableObject {
 
         var procID: AudioDeviceIOProcID?
         let createStatus = AudioDeviceCreateIOProcID(
-            blackHoleID,
+            captureID,
             etherIOProc,
             contextPtr,
             &procID
@@ -400,19 +414,19 @@ final class EngineManager: ObservableObject {
         guard createStatus == noErr, let procID = procID else {
             Unmanaged<IOProcContext>.fromOpaque(contextPtr).release()
             self.ioProcContextPtr = nil
-            throw EngineError.deviceSetFailed("BlackHole IOProc", createStatus)
+            throw EngineError.deviceSetFailed("Ether IOProc", createStatus)
         }
-        self.blackHoleProcID = procID
+        self.captureProcID = procID
 
-        let startStatus = AudioDeviceStart(blackHoleID, procID)
+        let startStatus = AudioDeviceStart(captureID, procID)
         guard startStatus == noErr else {
-            throw EngineError.deviceSetFailed("BlackHole IOProc start", startStatus)
+            throw EngineError.deviceSetFailed("Ether IOProc start", startStatus)
         }
 
         // Main-thread timer: pull recent samples from analyzer ring → spectrum
         startAnalyzerTimer()
 
-        logger.log("Pipeline active (HAL IOProc): BlackHole → EQ → \(outputDevice.name, privacy: .public)")
+        logger.log("Pipeline active (HAL IOProc): Ether driver → EQ → \(outputDevice.name, privacy: .public)")
     }
 
     private var ioProcContextPtr: UnsafeMutableRawPointer?
@@ -450,12 +464,12 @@ final class EngineManager: ObservableObject {
         analyzerTimer = nil
 
         // HAL IOProc teardown
-        if let procID = blackHoleProcID, blackHoleDeviceID != kAudioObjectUnknown {
-            AudioDeviceStop(blackHoleDeviceID, procID)
-            AudioDeviceDestroyIOProcID(blackHoleDeviceID, procID)
+        if let procID = captureProcID, captureDeviceID != kAudioObjectUnknown {
+            AudioDeviceStop(captureDeviceID, procID)
+            AudioDeviceDestroyIOProcID(captureDeviceID, procID)
         }
-        blackHoleProcID = nil
-        blackHoleDeviceID = kAudioObjectUnknown
+        captureProcID = nil
+        captureDeviceID = kAudioObjectUnknown
 
         if let ctx = ioProcContextPtr {
             Unmanaged<IOProcContext>.fromOpaque(ctx).release()
@@ -497,22 +511,31 @@ final class EngineManager: ObservableObject {
         }
     }
 
-    /// Apply band parameters, master gain, and global bypass to the live EQ unit.
-    /// Called on every drag update — lock-free, just property writes.
+    /// Apply band parameters to the driver (real DSP) and keep AVAudioUnitEQ
+    /// flat in the app pipeline — it remains in the graph so we can still tap
+    /// post-EQ for spectrum analysis, but does no processing.
     /// Adaptive offsets (if active) are added on top of the user's band gains.
     func applyEQ(bands: [EQBand], masterGain: Float = 0, bypassed: Bool = false) {
-        guard let eq = eq else { return }
         let adaptiveOffsets = adaptive.isActive ? adaptive.adaptiveOffsets : []
-        for (i, band) in bands.enumerated() where i < eq.bands.count {
-            let auBand = eq.bands[i]
-            auBand.filterType = band.type.avFilterType
-            auBand.frequency = band.frequency
+        let mergedBands = bands.enumerated().map { (i, b) -> EQBand in
             let offset = i < adaptiveOffsets.count ? adaptiveOffsets[i] : 0
-            auBand.gain = band.type.usesGain ? max(-24, min(24, band.gain + offset)) : 0
-            auBand.bandwidth = max(0.05, 1.0 / band.q)
-            auBand.bypass = band.bypassed || bypassed
+            var copy = b
+            copy.gain = b.type.usesGain ? max(-24, min(24, b.gain + offset)) : 0
+            return copy
         }
-        outputEngine?.mainMixerNode.outputVolume = pow(10, masterGain / 20)
+
+        // Push to the driver — DSP runs in coreaudiod.
+        DriverCommunicator.setEQParams(mergedBands, masterGain: masterGain, bypassed: bypassed)
+
+        // Keep the AVAudioUnitEQ flat so the post-EQ tap still runs, but
+        // doesn't re-process audio that's already been EQ'd by the driver.
+        if let eq = eq {
+            for i in 0..<eq.bands.count {
+                eq.bands[i].bypass = true
+            }
+        }
+        // Master gain is now driver-side; keep mixer at unity.
+        outputEngine?.mainMixerNode.outputVolume = 1.0
     }
 
     private func setDevice(_ deviceID: AudioDeviceID, on audioUnit: AudioUnit, label: String) throws {

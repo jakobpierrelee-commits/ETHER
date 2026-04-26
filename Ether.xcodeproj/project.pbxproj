@@ -38,9 +38,11 @@
 		7B2FF890FCAEC60342D2C212 /* MiniPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C354B264EE4368894839F645 /* MiniPlayerView.swift */; };
 		7F74D59C9DD543C14530ECD7 /* ABSlotsBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B152E3EAF007229E217AC976 /* ABSlotsBar.swift */; };
 		861C791B53BD992ECDFA49AC /* EtherealWaveform.swift in Sources */ = {isa = PBXBuildFile; fileRef = 154C915D3839D3269B2ED66A /* EtherealWaveform.swift */; };
+		8C9C6C680867DDFC92FFAC24 /* EtherealSkin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12125287796417D7620BE481 /* EtherealSkin.swift */; };
 		912D8758EA0288BDDFE12119 /* ReferenceMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEB53A6D91026EAAC16DD3A /* ReferenceMatcher.swift */; };
 		91544976E18817E5F928A747 /* CoreFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AC7B34D642F03D2E8927A183 /* CoreFoundation.framework */; };
 		92C1B6049E380CD0BA5111EC /* RingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A766B83C1D05FED65BA88D64 /* RingBuffer.swift */; };
+		9B88D184FE57274D2128A6C4 /* Ether.icns in Resources */ = {isa = PBXBuildFile; fileRef = CEED83C9465A7A77E3D70655 /* Ether.icns */; };
 		9E6C508414128A771F673E0B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = EFF636577FD55EE2B708D289 /* Sparkle */; };
 		A7A15E1EDD30A0B78A780C05 /* SpatialController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FDBC54B4D85901D3AB63E96 /* SpatialController.swift */; };
 		AA9596B664D6D76BF6E689E0 /* GlobalHotkeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = D693C3444C6E601A07C466CF /* GlobalHotkeys.swift */; };
@@ -71,6 +73,7 @@
 		0815837A8E874D3E2438AF77 /* MasterGainStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasterGainStrip.swift; sourceTree = "<group>"; };
 		0C74B293F84C6E2A7097CE59 /* AdvancedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedView.swift; sourceTree = "<group>"; };
 		0CD2E8BD28AFFDFA4270303D /* IOProc.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOProc.swift; sourceTree = "<group>"; };
+		12125287796417D7620BE481 /* EtherealSkin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EtherealSkin.swift; sourceTree = "<group>"; };
 		140747B461AB44CC8B81434D /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
 		154C915D3839D3269B2ED66A /* EtherealWaveform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EtherealWaveform.swift; sourceTree = "<group>"; };
 		17CEF7F0CF99D7902B634C1C /* NowPlayingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowPlayingManager.swift; sourceTree = "<group>"; };
@@ -200,6 +203,7 @@
 				FD6AE34DCD9C44FC8B4BF8A0 /* ContentView.swift */,
 				F649B47A671694C22F0318FB /* DesignSystem.swift */,
 				CBE97FA899ACA8E1B1B527A2 /* EQBandsView.swift */,
+				12125287796417D7620BE481 /* EtherealSkin.swift */,
 				154C915D3839D3269B2ED66A /* EtherealWaveform.swift */,
 				5DC10AAAAB3DF5E3DCEE1BC2 /* ExperimentalTuningView.swift */,
 				CB5E11814DD0F2B8563B26AB /* MacroKnobsView.swift */,
@@ -315,6 +319,7 @@
 			buildConfigurationList = EF68CBB208C49C759D320992 /* Build configuration list for PBXNativeTarget "EtherDriver" */;
 			buildPhases = (
 				E106491A7F4F2A3C5A0D27CD /* Sources */,
+				517699DAC6FD1F470621E140 /* Resources */,
 				6FF9C568C6AE6EDA1A8C55C2 /* Frameworks */,
 			);
 			buildRules = (
@@ -337,6 +342,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					9DDA1EE34803342B5DAC43EE = {
+						DevelopmentTeam = WDH3LXHAAD;
+						ProvisioningStyle = Manual;
+					};
 				};
 			};
 			buildConfigurationList = F9FEA416E250B1A34AF4DFB4 /* Build configuration list for PBXProject "Ether" */;
@@ -363,6 +372,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		517699DAC6FD1F470621E140 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9B88D184FE57274D2128A6C4 /* Ether.icns in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E561F6DF675FC588BC6CD018 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -400,6 +417,7 @@
 				783733AED72409D6830ECC02 /* EQProfile.swift in Sources */,
 				B43B2573D794B9D357BF6440 /* EngineManager.swift in Sources */,
 				33D43830E270463441416B78 /* EtherApp.swift in Sources */,
+				8C9C6C680867DDFC92FFAC24 /* EtherealSkin.swift in Sources */,
 				861C791B53BD992ECDFA49AC /* EtherealWaveform.swift in Sources */,
 				596AD0A1C6FC26B00D1CB2E2 /* ExperimentalTuningView.swift in Sources */,
 				AA9596B664D6D76BF6E689E0 /* GlobalHotkeys.swift in Sources */,
@@ -507,13 +525,13 @@
 				CODE_SIGN_ENTITLEMENTS = Ether.entitlements;
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = audio.ether.app;
 				PRODUCT_NAME = Ether;
 				SDKROOT = macosx;
@@ -527,13 +545,13 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Ether.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = audio.ether.app;
 				PRODUCT_NAME = Ether;
 				SDKROOT = macosx;
@@ -609,8 +627,11 @@
 			buildSettings = {
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CLANG_CXX_LIBRARY = "libc++";
+				CODE_SIGN_IDENTITY = "Developer ID Application: Black Team, LLC (WDH3LXHAAD)";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = WDH3LXHAAD;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\".\"",
@@ -623,7 +644,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.2.2;
+				OTHER_CODE_SIGN_FLAGS = "--timestamp --options=runtime";
 				PRODUCT_BUNDLE_IDENTIFIER = audio.ether.driver;
 				PRODUCT_NAME = EtherDriver;
 				SDKROOT = macosx;
@@ -637,8 +659,11 @@
 			buildSettings = {
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CLANG_CXX_LIBRARY = "libc++";
+				CODE_SIGN_IDENTITY = "Developer ID Application: Black Team, LLC (WDH3LXHAAD)";
+				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
+				DEVELOPMENT_TEAM = WDH3LXHAAD;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"\".\"",
@@ -651,7 +676,8 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.2.2;
+				OTHER_CODE_SIGN_FLAGS = "--timestamp --options=runtime";
 				PRODUCT_BUNDLE_IDENTIFIER = audio.ether.driver;
 				PRODUCT_NAME = EtherDriver;
 				SDKROOT = macosx;

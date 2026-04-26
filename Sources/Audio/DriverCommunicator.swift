@@ -8,10 +8,14 @@ enum DriverCommunicator {
 
     private static let logger = Logger(subsystem: "audio.ether.app", category: "DriverComm")
 
-    /// The custom property selector for EQ parameters ('EtEQ' = 0x45744551)
+    /// Custom property selector for EQ parameters ('EtEQ' = 0x45744551)
     private static let eqPropertySelector = AudioObjectPropertySelector(0x45744551)
 
-    /// Find the BlackHole virtual device (we use BlackHole as the capture source).
+    /// Stable UID our driver advertises (see Driver/EtherDriver.cpp).
+    static let driverDeviceUID = "EtherDevice_UID"
+
+    /// Locate the Ether virtual device by UID — survives device-ID reshuffles
+    /// (e.g. coreaudiod restarts) and avoids name collisions.
     static func findEtherDevice() -> AudioObjectID? {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
@@ -30,26 +34,92 @@ enum DriverCommunicator {
         ) == noErr else { return nil }
 
         for deviceID in deviceIDs {
-            var nameAddress = AudioObjectPropertyAddress(
-                mSelector: kAudioDevicePropertyDeviceNameCFString,
+            var uidAddress = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceUID,
                 mScope: kAudioObjectPropertyScopeGlobal,
                 mElement: kAudioObjectPropertyElementMain
             )
-            var name: Unmanaged<CFString>?
-            var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-            if AudioObjectGetPropertyData(deviceID, &nameAddress, 0, nil, &nameSize, &name) == noErr,
-               let nameStr = name?.takeRetainedValue() as String?,
-               nameStr.contains("BlackHole") {
-                logger.log("Found BlackHole capture device: id=\(deviceID)")
+            var uid: Unmanaged<CFString>?
+            var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            if AudioObjectGetPropertyData(deviceID, &uidAddress, 0, nil, &uidSize, &uid) == noErr,
+               let uidStr = uid?.takeRetainedValue() as String?,
+               uidStr == driverDeviceUID {
+                logger.log("Found Ether driver device: id=\(deviceID)")
                 return deviceID
             }
         }
 
-        logger.warning("BlackHole not found — install with 'brew install blackhole-2ch'")
+        logger.warning("Ether driver not found — run install-driver.sh")
         return nil
     }
 
     static var isDriverInstalled: Bool {
         findEtherDevice() != nil
+    }
+
+    // MARK: - EQ parameter push to driver
+
+    /// Mirror of the C struct `EtherEQParams` in Driver/EtherDriver.h.
+    /// Layout MUST match exactly — same field order, same sizes, no padding.
+    private struct CEtherEQBand {
+        var frequency: Float = 0
+        var gain: Float = 0
+        var q: Float = 0
+        var filterType: UInt32 = 0
+        var enabled: UInt32 = 1
+    }
+    private struct CEtherEQParams {
+        var bandCount: UInt32 = 0
+        var globalGain: Float = 0
+        var bypass: UInt32 = 0
+        var bands: (CEtherEQBand, CEtherEQBand, CEtherEQBand, CEtherEQBand, CEtherEQBand,
+                    CEtherEQBand, CEtherEQBand, CEtherEQBand, CEtherEQBand, CEtherEQBand) =
+            (CEtherEQBand(), CEtherEQBand(), CEtherEQBand(), CEtherEQBand(), CEtherEQBand(),
+             CEtherEQBand(), CEtherEQBand(), CEtherEQBand(), CEtherEQBand(), CEtherEQBand())
+    }
+
+    /// Push EQ state into the driver. Driver applies biquads in coreaudiod's
+    /// process; the Swift app no longer needs to run AVAudioUnitEQ.
+    @discardableResult
+    static func setEQParams(_ bands: [EQBand], masterGain: Float, bypassed: Bool) -> Bool {
+        guard let deviceID = findEtherDevice() else { return false }
+        var params = CEtherEQParams()
+        params.bandCount  = UInt32(min(bands.count, 10))
+        params.globalGain = masterGain
+        params.bypass     = bypassed ? 1 : 0
+
+        withUnsafeMutablePointer(to: &params.bands) { tuplePtr in
+            tuplePtr.withMemoryRebound(to: CEtherEQBand.self, capacity: 10) { arr in
+                for i in 0..<Int(params.bandCount) {
+                    let b = bands[i]
+                    arr[i].frequency  = b.frequency
+                    arr[i].gain       = b.type.usesGain ? b.gain : 0
+                    arr[i].q          = b.q
+                    arr[i].filterType = UInt32(b.type.rawValue)
+                    arr[i].enabled    = b.bypassed ? 0 : 1
+                }
+            }
+        }
+
+        // Wrap the struct in CFData so the HAL routes it through the remote
+        // driver IPC as a property-list value. Raw struct bytes don't survive.
+        let data = withUnsafeBytes(of: params) { buf -> CFData in
+            CFDataCreate(nil, buf.baseAddress?.assumingMemoryBound(to: UInt8.self), buf.count)
+        }
+        var dataRef: CFData? = data
+        var address = AudioObjectPropertyAddress(
+            mSelector: eqPropertySelector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let size = UInt32(MemoryLayout<CFData?>.size)
+        let status = withUnsafePointer(to: &dataRef) { ptr in
+            AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, ptr)
+        }
+        if status != noErr {
+            logger.warning("setEQParams failed: OSStatus \(status, privacy: .public)")
+            return false
+        }
+        return true
     }
 }

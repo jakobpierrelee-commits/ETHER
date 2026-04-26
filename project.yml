@@ -27,8 +27,8 @@ targets:
         SWIFT_VERSION: "5"
         PRODUCT_BUNDLE_IDENTIFIER: audio.ether.app
         PRODUCT_NAME: Ether
-        MARKETING_VERSION: "1.2.1"
-        CURRENT_PROJECT_VERSION: "9"
+        MARKETING_VERSION: "1.2.2"
+        CURRENT_PROJECT_VERSION: "10"
         CODE_SIGN_ENTITLEMENTS: Ether.entitlements
       configs:
         Release:
@@ -41,7 +41,7 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSUIElement: false
-        NSMicrophoneUsageDescription: "Ether reads system audio through its audio driver to apply EQ processing."
+        NSMicrophoneUsageDescription: "Ether captures system audio via its virtual audio device to apply EQ processing. Your microphone is never accessed."
         NSAppleEventsUsageDescription: "Ether reads now-playing info from Spotify and Music to display album art and track info in the mini player."
         ATSApplicationFontsPath: "Fonts/"
         SUFeedURL: "https://raw.githubusercontent.com/jakobpierrelee-commits/ETHER/main/appcast.xml"
@@ -56,6 +56,8 @@ targets:
       - path: Driver
         excludes:
           - Info.plist
+      - path: Assets/Ether.icns
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: audio.ether.driver
@@ -66,10 +68,14 @@ targets:
         GCC_SYMBOLS_PRIVATE_EXTERN: YES
         SKIP_INSTALL: NO
         INSTALL_PATH: /Library/Audio/Plug-Ins/HAL
-        MARKETING_VERSION: "1.2.1"
-        CURRENT_PROJECT_VERSION: "9"
+        MARKETING_VERSION: "1.2.2"
+        CURRENT_PROJECT_VERSION: "10"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Driver/Info.plist
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "Developer ID Application: Black Team, LLC (WDH3LXHAAD)"
+        DEVELOPMENT_TEAM: WDH3LXHAAD
+        OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime"
     dependencies:
       - framework: CoreFoundation.framework
       - framework: CoreAudio.framework

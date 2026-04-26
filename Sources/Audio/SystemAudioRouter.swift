@@ -50,29 +50,34 @@ enum SystemAudioRouter {
     /// Used to recover if the app crashes while routed to BlackHole.
     static let lastGoodOutputKey = "audio.ether.lastGoodOutputUID"
 
-    /// Safety net on launch: if system is currently routed to BlackHole AND we
-    /// have a persisted last-good device, restore it. Handles the case where the
-    /// app crashed or was force-quit while routed to BlackHole.
-    static func restoreOutputIfStuckOnBlackHole() {
-        guard let currentID = currentDefaultOutputDeviceID(),
-              let currentName = AudioDeviceManager.deviceName(for: currentID),
-              currentName.contains("BlackHole") else {
-            return
-        }
+    /// Safety net on launch: if system is currently routed to our Ether driver
+    /// (or legacy BlackHole) AND we have a persisted last-good device, restore it.
+    /// Handles the case where the app crashed or was force-quit while routed virtual.
+    static func restoreOutputIfStuckOnVirtual() {
+        guard let currentID = currentDefaultOutputDeviceID() else { return }
+        let isEther = AudioDeviceManager.deviceUID(for: currentID) == DriverCommunicator.driverDeviceUID
+        let isBlackHole = AudioDeviceManager.deviceName(for: currentID)?.contains("BlackHole") == true
+        guard isEther || isBlackHole else { return }
 
-        guard let savedUID = UserDefaults.standard.string(forKey: lastGoodOutputKey) else {
-            logger.warning("System output is BlackHole but no saved device to restore to")
-            return
-        }
-
-        for device in AudioDeviceManager.allDevices() where device.uid == savedUID {
-            if setDefaultOutputDevice(device.id) {
-                logger.log("Restored system output to \(device.name, privacy: .public) (was stuck on BlackHole)")
-                UserDefaults.standard.removeObject(forKey: lastGoodOutputKey)
+        if let savedUID = UserDefaults.standard.string(forKey: lastGoodOutputKey) {
+            for device in AudioDeviceManager.allDevices() where device.uid == savedUID {
+                if setDefaultOutputDevice(device.id) {
+                    logger.log("Restored system output to \(device.name, privacy: .public) (was stuck on virtual device)")
+                    UserDefaults.standard.removeObject(forKey: lastGoodOutputKey)
+                }
+                return
             }
-            return
+            logger.warning("Could not find device with UID \(savedUID, privacy: .public) to restore")
         }
 
-        logger.warning("Could not find device with UID \(savedUID, privacy: .public) to restore")
+        // No saved device — fall back to first physical output (prefer CalDigit)
+        let candidates = AudioDeviceManager.outputDevices()
+        let fallback = candidates.first(where: { $0.name.contains("CalDigit") }) ?? candidates.first
+        if let fallback = fallback, setDefaultOutputDevice(fallback.id) {
+            logger.log("Fallback-restored system output to \(fallback.name, privacy: .public) (was stuck on virtual device)")
+            UserDefaults.standard.removeObject(forKey: lastGoodOutputKey)
+        } else {
+            logger.warning("System output is on a virtual device but no physical device found to restore to")
+        }
     }
 }

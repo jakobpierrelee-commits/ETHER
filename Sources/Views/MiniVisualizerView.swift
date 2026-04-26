@@ -275,7 +275,7 @@ struct MiniVisualizerView: View {
                     let radV = particles[i].vx * nx + particles[i].vy * ny
                     let gravityStr = radV > 0
                         ? (0.0055 + (1.0 - bassEnergy) * 0.0095) * massVar
-                        : (0.0018 + (1.0 - bassEnergy) * 0.0030) * massVar
+                        : (0.0010 + (1.0 - bassEnergy) * 0.0018) * massVar
                     particles[i].vx -= nx * gravityStr * dist
                     particles[i].vy -= ny * gravityStr * dist
 
@@ -299,8 +299,8 @@ struct MiniVisualizerView: View {
                         particles[i].vy += sin(scatterAngle) * impactForce
                     }
 
-                    // Kick: steeper power curve — only hard hits break particles far from center
-                    let kickImpulse = pow(kickFast, 2.1) * 0.036 / massVar
+                    // Kick: lower power curve so medium hits register, higher amplitude for snap
+                    let kickImpulse = pow(kickFast, 1.6) * 0.058 / massVar
                     particles[i].vx += nx * kickImpulse
                     particles[i].vy += ny * kickImpulse
 
@@ -311,7 +311,7 @@ struct MiniVisualizerView: View {
                     particles[i].vy += ny * liftEnergy * liftStr
 
                     // Asymmetric friction: fast outward, slow inward return
-                    let friction = radV > 0 ? 0.86 + dist * 0.06 : 0.97 + dist * 0.02
+                    let friction = radV > 0 ? 0.86 + dist * 0.06 : 0.984 + dist * 0.01
                     particles[i].vx *= friction
                     particles[i].vy *= friction
 

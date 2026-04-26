@@ -7,12 +7,20 @@
 #include <atomic>
 
 // ─── Object IDs ──────────────────────────────────────────────────────────────
+// macOS audio hierarchy: PlugIn → Box → Device → Streams + Controls.
+// Without a Box, the HAL registrar won't register our device.
 enum {
-    kEtherPlugInObjectID      = kAudioObjectPlugInObject,  // 1
-    kEtherDeviceObjectID      = 2,
-    kEtherInputStreamObjectID = 3,   // apps write TO this (system audio in)
-    kEtherOutputStreamObjectID = 4,  // we read FROM this (for forwarding)
+    kEtherPlugInObjectID              = kAudioObjectPlugInObject,  // 1
+    kEtherBoxObjectID                 = 2,
+    kEtherDeviceObjectID              = 3,
+    kEtherInputStreamObjectID         = 4,   // apps write TO this (system audio in)
+    kEtherOutputStreamObjectID        = 5,   // we read FROM this (for forwarding)
+    kEtherOutputVolumeControlObjectID = 6,
+    kEtherOutputMuteControlObjectID   = 7,
 };
+
+static const Float32 kEtherVolumeMinDb = -96.0f;
+static const Float32 kEtherVolumeMaxDb = 0.0f;
 
 // ─── Device Properties ──────────────────────────────────────────────────────
 static const UInt32   kEtherNumChannels    = 2;
@@ -28,11 +36,14 @@ static const UInt32   kEtherRingBufferFrames = 32768;
 static const AudioObjectPropertySelector kEtherEQParametersProperty = 0x45744551;
 
 // ─── EQ Band ────────────────────────────────────────────────────────────────
+// filterType matches the Swift EQFilterType enum raw values:
+//   0 = lowCut (HPF)   1 = lowShelf      2 = bell (parametric)
+//   3 = highShelf      4 = highCut (LPF) 5 = notch
 struct EtherEQBand {
     Float32 frequency;
     Float32 gain;        // dB
     Float32 q;
-    UInt32  filterType;  // 0=parametric, 1=lowShelf, 2=highShelf
+    UInt32  filterType;
     UInt32  enabled;
 };
 
@@ -43,6 +54,17 @@ struct EtherEQParams {
     Float32     globalGain;
     UInt32      bypass;
     EtherEQBand bands[kEtherMaxBands];
+};
+
+// ─── Biquad ────────────────────────────────────────────────────────────────
+// One biquad per band. Coefficients are shared across L/R channels; per-channel
+// state holds the two-sample delay line. Direct Form I (transposed avoided so
+// the audio thread never needs to touch coefs and state in the same iteration).
+struct EtherBiquadCoefs {
+    Float32 b0, b1, b2, a1, a2;  // a0 is normalized to 1
+};
+struct EtherBiquadState {
+    Float32 z1, z2;              // y[n-1], y[n-2] for transposed Direct Form II
 };
 
 // ─── Driver State ───────────────────────────────────────────────────────────
@@ -70,6 +92,14 @@ struct EtherDriverState {
     // EQ parameters (set by the Swift app)
     EtherEQParams eqParams{};
     pthread_mutex_t eqMutex = PTHREAD_MUTEX_INITIALIZER;
+
+    // Biquad cascade — one set of coefficients per band, two channels of state.
+    // `coefsGen` is bumped every time coefs change so the audio thread can detect
+    // and pick them up without locking.
+    EtherBiquadCoefs eqCoefs[kEtherMaxBands]{};
+    EtherBiquadState eqState[kEtherNumChannels][kEtherMaxBands]{};
+    std::atomic<UInt32> coefsGen{0};
+    Float32          globalGainLin{1.0f};
 
     // Volume / mute
     Float32 volume{1.0f};

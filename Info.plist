@@ -29,7 +29,7 @@
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Ether reads now-playing info from Spotify and Music to display album art and track info in the mini player.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Ether reads system audio through its audio driver to apply EQ processing.</string>
+	<string>Ether captures system audio via its virtual audio device to apply EQ processing. Your microphone is never accessed.</string>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>

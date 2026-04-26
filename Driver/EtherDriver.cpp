@@ -10,12 +10,178 @@
 #include "EtherDriver.h"
 #include <os/log.h>
 #include <string.h>
+#include <math.h>
 #include <dispatch/dispatch.h>
 
 static os_log_t sLog = os_log_create("audio.ether.driver", "Driver");
 
 // ─── Forward declarations ────────────────────────────────────────────────────
 static EtherDriverState* sDriverState = nullptr;
+
+// Icon URL into the driver bundle's Resources/Ether.icns. Built lazily on first
+// kAudioObjectPropertyIcon query so we don't pay the bundle lookup at load.
+static CFURLRef sIconURL = nullptr;
+
+static CFURLRef CopyIconURL() {
+    if (sIconURL) {
+        CFRetain(sIconURL);
+        return sIconURL;
+    }
+    CFBundleRef bundle = CFBundleGetBundleWithIdentifier(CFSTR("audio.ether.driver"));
+    if (!bundle) return nullptr;
+    CFURLRef url = CFBundleCopyResourceURL(bundle, CFSTR("Ether"), CFSTR("icns"), nullptr);
+    if (url) {
+        sIconURL = (CFURLRef)CFRetain(url);
+    }
+    return url;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MARK: - EQ DSP
+// ═══════════════════════════════════════════════════════════════════════════════
+// Biquad coefficients per RBJ EQ Cookbook. We store normalized coefs
+// (a0=1) and apply them with transposed Direct Form II for one-multiply
+// efficiency and good numerical behaviour at high frequencies.
+
+// Filter types match Swift EQFilterType raw values (see EtherDriver.h).
+static void ComputeBiquadCoefs(const EtherEQBand& band, Float64 sampleRate, EtherBiquadCoefs& out) {
+    if (!band.enabled) {
+        out = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f };  // pass-through
+        return;
+    }
+    const Float64 A     = pow(10.0, band.gain / 40.0);     // sqrt(linear gain)
+    const Float64 w0    = 2.0 * M_PI * band.frequency / sampleRate;
+    const Float64 cosw0 = cos(w0);
+    const Float64 sinw0 = sin(w0);
+    const Float64 q     = (band.q > 0.001) ? band.q : 0.7071;
+    const Float64 alpha = sinw0 / (2.0 * q);
+
+    Float64 b0, b1, b2, a0, a1, a2;
+    switch (band.filterType) {
+        case 0: {  // lowCut / HPF
+            b0 =  (1 + cosw0) / 2.0;
+            b1 = -(1 + cosw0);
+            b2 =  (1 + cosw0) / 2.0;
+            a0 =   1 + alpha;
+            a1 =  -2 * cosw0;
+            a2 =   1 - alpha;
+            break;
+        }
+        case 1: {  // low shelf
+            const Float64 shelfA = 2.0 * sqrt(A) * alpha;
+            b0 =      A * ((A + 1) - (A - 1) * cosw0 + shelfA);
+            b1 =  2 * A * ((A - 1) - (A + 1) * cosw0);
+            b2 =      A * ((A + 1) - (A - 1) * cosw0 - shelfA);
+            a0 =          (A + 1) + (A - 1) * cosw0 + shelfA;
+            a1 =     -2 * ((A - 1) + (A + 1) * cosw0);
+            a2 =          (A + 1) + (A - 1) * cosw0 - shelfA;
+            break;
+        }
+        case 3: {  // high shelf
+            const Float64 shelfA = 2.0 * sqrt(A) * alpha;
+            b0 =      A * ((A + 1) + (A - 1) * cosw0 + shelfA);
+            b1 = -2 * A * ((A - 1) + (A + 1) * cosw0);
+            b2 =      A * ((A + 1) + (A - 1) * cosw0 - shelfA);
+            a0 =          (A + 1) - (A - 1) * cosw0 + shelfA;
+            a1 =      2 * ((A - 1) - (A + 1) * cosw0);
+            a2 =          (A + 1) - (A - 1) * cosw0 - shelfA;
+            break;
+        }
+        case 4: {  // highCut / LPF
+            b0 =  (1 - cosw0) / 2.0;
+            b1 =   1 - cosw0;
+            b2 =  (1 - cosw0) / 2.0;
+            a0 =   1 + alpha;
+            a1 =  -2 * cosw0;
+            a2 =   1 - alpha;
+            break;
+        }
+        case 5: {  // notch
+            b0 =   1;
+            b1 =  -2 * cosw0;
+            b2 =   1;
+            a0 =   1 + alpha;
+            a1 =  -2 * cosw0;
+            a2 =   1 - alpha;
+            break;
+        }
+        default: {  // 2 = bell / peaking parametric
+            b0 = 1 + alpha * A;
+            b1 = -2 * cosw0;
+            b2 = 1 - alpha * A;
+            a0 = 1 + alpha / A;
+            a1 = -2 * cosw0;
+            a2 = 1 - alpha / A;
+            break;
+        }
+    }
+    out.b0 = (Float32)(b0 / a0);
+    out.b1 = (Float32)(b1 / a0);
+    out.b2 = (Float32)(b2 / a0);
+    out.a1 = (Float32)(a1 / a0);
+    out.a2 = (Float32)(a2 / a0);
+}
+
+// Recompute the entire cascade from current eqParams. Caller must hold eqMutex.
+static void RecomputeAllCoefs() {
+    if (!sDriverState) return;
+    for (UInt32 i = 0; i < kEtherMaxBands; i++) {
+        ComputeBiquadCoefs(sDriverState->eqParams.bands[i], kEtherSampleRate, sDriverState->eqCoefs[i]);
+    }
+    sDriverState->globalGainLin = (Float32)pow(10.0, sDriverState->eqParams.globalGain / 20.0);
+    sDriverState->coefsGen.fetch_add(1, std::memory_order_release);
+}
+
+// Volume scalar ↔ decibel conversions. Linear-in-dB curve so each 0.1 of slider
+// movement is roughly the same perceptual loudness step.
+static inline Float32 ScalarToDb(Float32 scalar) {
+    if (scalar <= 0.00001f) return kEtherVolumeMinDb;
+    Float32 db = 20.0f * log10f(scalar);
+    if (db < kEtherVolumeMinDb) return kEtherVolumeMinDb;
+    if (db > kEtherVolumeMaxDb) return kEtherVolumeMaxDb;
+    return db;
+}
+static inline Float32 DbToScalar(Float32 db) {
+    if (db <= kEtherVolumeMinDb) return 0.0f;
+    if (db >= kEtherVolumeMaxDb) return 1.0f;
+    return powf(10.0f, db / 20.0f);
+}
+
+// Smooth limiter: linear up to ±0.95, asymptotes toward ±1.0. Threshold sits
+// above typical mastered-music peaks (-0.5 to -1 dB) so program material
+// passes untouched; only EQ/gain overshoots above ±0.95 get caught.
+static inline float SoftClip(float x) {
+    const float t = 0.95f;
+    const float ax = fabsf(x);
+    if (ax <= t) return x;
+    const float sign = (x > 0.0f) ? 1.0f : -1.0f;
+    const float over = (ax - t) / (1.0f - t);   // 0 .. ∞
+    return sign * (t + (1.0f - t) * over / (1.0f + over));
+}
+
+// Apply the cascade to one channel's interleaved samples (stride=numChannels).
+// Transposed Direct Form II — only one multiply by b0, two state updates per band.
+static inline void ProcessChannel(float* samples, UInt32 frames, UInt32 stride,
+                                  UInt32 channelIdx, UInt32 bandCount) {
+    for (UInt32 b = 0; b < bandCount; b++) {
+        const EtherBiquadCoefs c = sDriverState->eqCoefs[b];
+        // Skip pure pass-through bands cheaply
+        if (c.b0 == 1.0f && c.b1 == 0.0f && c.b2 == 0.0f && c.a1 == 0.0f && c.a2 == 0.0f) {
+            continue;
+        }
+        EtherBiquadState& s = sDriverState->eqState[channelIdx][b];
+        Float32 z1 = s.z1, z2 = s.z2;
+        for (UInt32 i = 0; i < frames; i++) {
+            const Float32 x = samples[i * stride];
+            const Float32 y = c.b0 * x + z1;
+            z1 = c.b1 * x - c.a1 * y + z2;
+            z2 = c.b2 * x - c.a2 * y;
+            samples[i * stride] = y;
+        }
+        s.z1 = z1;
+        s.z2 = z2;
+    }
+}
 
 // COM interface functions
 static HRESULT   Ether_QueryInterface(void* driver, REFIID iid, LPVOID* ppv);
@@ -90,7 +256,7 @@ extern "C" __attribute__((visibility("default"))) void* EtherDriver_Create(CFAll
         sDriverState->eqParams.bands[i].frequency = defaultFreqs[i];
         sDriverState->eqParams.bands[i].gain = 0.0f;
         sDriverState->eqParams.bands[i].q = 1.0f;
-        sDriverState->eqParams.bands[i].filterType = 0;
+        sDriverState->eqParams.bands[i].filterType = 2;  // bell / parametric (Swift raw)
         sDriverState->eqParams.bands[i].enabled = 1;
     }
 
@@ -100,6 +266,9 @@ extern "C" __attribute__((visibility("default"))) void* EtherDriver_Create(CFAll
     Float64 nanosPerTick = (Float64)timebase.numer / (Float64)timebase.denom;
     Float64 nanosPerFrame = 1e9 / kEtherSampleRate;
     sDriverState->ticksPerFrame = nanosPerFrame / nanosPerTick;
+
+    // Compute initial (flat) biquad coefficients
+    RecomputeAllCoefs();
 
     os_log(sLog, "EtherDriver created — virtual device at %.0f Hz, %u ch", kEtherSampleRate, kEtherNumChannels);
 
@@ -147,7 +316,7 @@ static OSStatus Ether_Initialize(AudioServerPlugInDriverRef driver, AudioServerP
         return kAudioHardwareIllegalOperationError;
     }
     sDriverState->host = host;
-    os_log(sLog, "Ether initialized — host stored, waiting for HAL queries");
+    os_log(sLog, "Ether initialized — host stored");
     return kAudioHardwareNoError;
 }
 
@@ -214,6 +383,8 @@ static OSStatus Ether_AbortDeviceConfigurationChange(AudioServerPlugInDriverRef 
 // ═══════════════════════════════════════════════════════════════════════════════
 
 static Boolean Ether_HasProperty(AudioServerPlugInDriverRef driver, AudioObjectID objectID, pid_t clientPID, const AudioObjectPropertyAddress* address) {
+    os_log(sLog, "HasProperty obj=%u sel=0x%x scope=0x%x",
+           (unsigned)objectID, (unsigned)address->mSelector, (unsigned)address->mScope);
     UInt32 dummySize = 0;
     OSStatus result = Ether_GetPropertyDataSize(driver, objectID, clientPID, address, 0, nullptr, &dummySize);
     return result == kAudioHardwareNoError;
@@ -228,6 +399,8 @@ static OSStatus Ether_IsPropertySettable(AudioServerPlugInDriverRef driver, Audi
 }
 
 static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, AudioObjectID objectID, pid_t clientPID, const AudioObjectPropertyAddress* address, UInt32 qualifierDataSize, const void* qualifierData, UInt32* outDataSize) {
+    os_log(sLog, "GetPropertyDataSize obj=%u sel=0x%x scope=0x%x",
+                 (unsigned)objectID, (unsigned)address->mSelector, (unsigned)address->mScope);
     // ── Plugin ──
     if (objectID == kEtherPlugInObjectID) {
         switch (address->mSelector) {
@@ -235,14 +408,46 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
             case kAudioObjectPropertyClass:           RETURN_SIZE(AudioClassID);
             case kAudioObjectPropertyOwner:           RETURN_SIZE(AudioObjectID);
             case kAudioObjectPropertyManufacturer:    RETURN_SIZE(CFStringRef);
+            // OwnedObjects on the plugin owns the Box (not the Device directly).
             case kAudioObjectPropertyOwnedObjects:    *outDataSize = sizeof(AudioObjectID); return kAudioHardwareNoError;
-            case kAudioPlugInPropertyDeviceList:       *outDataSize = sizeof(AudioObjectID); return kAudioHardwareNoError;
-            case kAudioPlugInPropertyResourceBundle:   RETURN_SIZE(CFStringRef);
-            case kAudioPlugInPropertyBoxList:          *outDataSize = 0; return kAudioHardwareNoError;
-            case kAudioPlugInPropertyClockDeviceList:  *outDataSize = 0; return kAudioHardwareNoError;
+            case kAudioPlugInPropertyBoxList:         *outDataSize = sizeof(AudioObjectID); return kAudioHardwareNoError;
+            case kAudioPlugInPropertyDeviceList:      *outDataSize = sizeof(AudioObjectID); return kAudioHardwareNoError;
+            case kAudioPlugInPropertyResourceBundle:  RETURN_SIZE(CFStringRef);
+            case kAudioPlugInPropertyClockDeviceList: *outDataSize = 0; return kAudioHardwareNoError;
             case kAudioPlugInPropertyTranslateUIDToDevice:   RETURN_SIZE(AudioObjectID);
             case kAudioPlugInPropertyTranslateUIDToBox:      RETURN_SIZE(AudioObjectID);
             case kAudioPlugInPropertyTranslateUIDToClockDevice: RETURN_SIZE(AudioObjectID);
+            case kAudioObjectPropertyCustomPropertyInfoList:
+                *outDataSize = 0; return kAudioHardwareNoError;
+            default: *outDataSize = 0; return kAudioHardwareUnknownPropertyError;
+        }
+    }
+
+    // ── Box ──
+    if (objectID == kEtherBoxObjectID) {
+        switch (address->mSelector) {
+            case kAudioObjectPropertyBaseClass:
+            case kAudioObjectPropertyClass:
+            case kAudioObjectPropertyOwner:
+            case kAudioObjectPropertyIdentify:
+            case kAudioBoxPropertyTransportType:
+            case kAudioBoxPropertyHasAudio:
+            case kAudioBoxPropertyHasVideo:
+            case kAudioBoxPropertyHasMIDI:
+            case kAudioBoxPropertyIsProtected:
+            case kAudioBoxPropertyAcquired:
+            case kAudioBoxPropertyAcquisitionFailed:
+                RETURN_SIZE(UInt32);
+            case kAudioObjectPropertyName:
+            case kAudioObjectPropertyModelName:
+            case kAudioObjectPropertyManufacturer:
+            case kAudioObjectPropertySerialNumber:
+            case kAudioObjectPropertyFirmwareVersion:
+            case kAudioBoxPropertyBoxUID:
+                RETURN_SIZE(CFStringRef);
+            case kAudioObjectPropertyOwnedObjects:
+            case kAudioBoxPropertyDeviceList:
+                *outDataSize = sizeof(AudioObjectID); return kAudioHardwareNoError;
             case kAudioObjectPropertyCustomPropertyInfoList:
                 *outDataSize = 0; return kAudioHardwareNoError;
             default: *outDataSize = 0; return kAudioHardwareUnknownPropertyError;
@@ -255,6 +460,7 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
             case kAudioObjectPropertyBaseClass:
             case kAudioObjectPropertyClass:
             case kAudioObjectPropertyOwner:
+            case kAudioObjectPropertyIdentify:
             case kAudioDevicePropertyDeviceCanBeDefaultDevice:
             case kAudioDevicePropertyDeviceCanBeDefaultSystemDevice:
             case kAudioDevicePropertyDeviceIsAlive:
@@ -264,11 +470,17 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
             case kAudioDevicePropertySafetyOffset:
             case kAudioDevicePropertyClockIsStable:
             case kAudioDevicePropertyClockAlgorithm:
+            case kAudioDevicePropertyClockDomain:
+            case kAudioDevicePropertyIsHidden:
                 RETURN_SIZE(UInt32);
 
             case kAudioObjectPropertyControlList:
-            case kAudioObjectPropertyCustomPropertyInfoList:
+                // TEMP: disconnected while we debug the coreaudiod wedge.
                 *outDataSize = 0;
+                return kAudioHardwareNoError;
+
+            case kAudioObjectPropertyCustomPropertyInfoList:
+                *outDataSize = sizeof(AudioServerPlugInCustomPropertyInfo);
                 return kAudioHardwareNoError;
 
             case kAudioDevicePropertyNominalSampleRate:
@@ -278,29 +490,51 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
                 *outDataSize = sizeof(AudioValueRange);
                 return kAudioHardwareNoError;
 
+            case kAudioDevicePropertyPreferredChannelsForStereo:
+                *outDataSize = 2 * sizeof(UInt32);
+                return kAudioHardwareNoError;
+
+            case kAudioDevicePropertyPreferredChannelLayout:
+                *outDataSize = offsetof(AudioChannelLayout, mChannelDescriptions);
+                return kAudioHardwareNoError;
+
             case kAudioDevicePropertyStreams:
-                if (address->mScope == kAudioObjectPropertyScopeInput)
-                    *outDataSize = sizeof(AudioObjectID);
+                // scope-dependent: 1 stream per scope, 2 for global.
+                if (address->mScope == kAudioObjectPropertyScopeGlobal)
+                    *outDataSize = 2 * sizeof(AudioObjectID);
                 else
                     *outDataSize = sizeof(AudioObjectID);
                 return kAudioHardwareNoError;
 
+            case kAudioDevicePropertyRelatedDevices:
+                *outDataSize = sizeof(AudioObjectID);
+                return kAudioHardwareNoError;
+
             case kAudioObjectPropertyOwnedObjects:
-                *outDataSize = 2 * sizeof(AudioObjectID);
+                // 1 stream per direction, 2 for global. Controls disconnected for now.
+                if (address->mScope == kAudioObjectPropertyScopeGlobal)
+                    *outDataSize = 2 * sizeof(AudioObjectID);
+                else
+                    *outDataSize = sizeof(AudioObjectID);
                 return kAudioHardwareNoError;
 
             case kAudioObjectPropertyName:
+            case kAudioObjectPropertyModelName:
             case kAudioObjectPropertyManufacturer:
             case kAudioDevicePropertyDeviceUID:
             case kAudioDevicePropertyModelUID:
             case kAudioDevicePropertyConfigurationApplication:
                 RETURN_SIZE(CFStringRef);
 
+            case kAudioDevicePropertyIcon:
+                RETURN_SIZE(CFURLRef);
+
             case kAudioDevicePropertyZeroTimeStampPeriod:
                 RETURN_SIZE(UInt32);
 
             case kEtherEQParametersProperty:
-                *outDataSize = sizeof(EtherEQParams);
+                // Property is exposed as CFDataRef wrapping the raw struct.
+                *outDataSize = sizeof(CFDataRef);
                 return kAudioHardwareNoError;
 
             default:
@@ -348,6 +582,8 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
 }
 
 static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioObjectID objectID, pid_t clientPID, const AudioObjectPropertyAddress* address, UInt32 qualifierDataSize, const void* qualifierData, UInt32 inDataSize, UInt32* outDataSize, void* outData) {
+    os_log(sLog, "GetPropertyData obj=%u sel=0x%x scope=0x%x",
+                 (unsigned)objectID, (unsigned)address->mSelector, (unsigned)address->mScope);
 
     // ── Standard format for the device ──
     AudioStreamBasicDescription format = {};
@@ -367,11 +603,11 @@ static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
             case kAudioObjectPropertyClass:        RETURN_UINT32(kAudioPlugInClassID);
             case kAudioObjectPropertyOwner:        RETURN_OBJECTID(kAudioObjectUnknown);
             case kAudioObjectPropertyManufacturer: RETURN_CFSTRING("Ether Audio");
-            case kAudioObjectPropertyOwnedObjects: RETURN_OBJECTID(kEtherDeviceObjectID);
-            case kAudioPlugInPropertyDeviceList:    RETURN_OBJECTID(kEtherDeviceObjectID);
+            case kAudioObjectPropertyOwnedObjects: RETURN_OBJECTID(kEtherBoxObjectID);
+            case kAudioPlugInPropertyBoxList:      RETURN_OBJECTID(kEtherBoxObjectID);
+            case kAudioPlugInPropertyDeviceList:   RETURN_OBJECTID(kEtherDeviceObjectID);
             case kAudioPlugInPropertyResourceBundle: RETURN_CFSTRING("");
 
-            case kAudioPlugInPropertyBoxList:
             case kAudioPlugInPropertyClockDeviceList:
                 *outDataSize = 0;
                 return kAudioHardwareNoError;
@@ -386,9 +622,52 @@ static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
                 RETURN_OBJECTID(kAudioObjectUnknown);
             }
 
-            case kAudioPlugInPropertyTranslateUIDToBox:
+            case kAudioPlugInPropertyTranslateUIDToBox: {
+                if (qualifierDataSize == sizeof(CFStringRef) && qualifierData != nullptr) {
+                    CFStringRef uid = *(CFStringRef*)qualifierData;
+                    if (CFStringCompare(uid, CFSTR("EtherBox_UID"), 0) == kCFCompareEqualTo) {
+                        RETURN_OBJECTID(kEtherBoxObjectID);
+                    }
+                }
+                RETURN_OBJECTID(kAudioObjectUnknown);
+            }
+
             case kAudioPlugInPropertyTranslateUIDToClockDevice:
                 RETURN_OBJECTID(kAudioObjectUnknown);
+
+            default: return kAudioHardwareUnknownPropertyError;
+        }
+    }
+
+    // ── Box Properties ──
+    if (objectID == kEtherBoxObjectID) {
+        switch (address->mSelector) {
+            case kAudioObjectPropertyBaseClass:    RETURN_UINT32(kAudioObjectClassID);
+            case kAudioObjectPropertyClass:        RETURN_UINT32(kAudioBoxClassID);
+            case kAudioObjectPropertyOwner:        RETURN_OBJECTID(kEtherPlugInObjectID);
+            case kAudioObjectPropertyName:         RETURN_CFSTRING("Ether");
+            case kAudioObjectPropertyModelName:    RETURN_CFSTRING("Ether Virtual Audio Box");
+            case kAudioObjectPropertyManufacturer: RETURN_CFSTRING("Ether Audio");
+            case kAudioObjectPropertySerialNumber: RETURN_CFSTRING("");
+            case kAudioObjectPropertyFirmwareVersion: RETURN_CFSTRING("");
+            case kAudioObjectPropertyIdentify:     RETURN_UINT32(0);
+
+            case kAudioBoxPropertyBoxUID:           RETURN_CFSTRING("EtherBox_UID");
+            case kAudioBoxPropertyTransportType:    RETURN_UINT32(kAudioDeviceTransportTypeVirtual);
+            case kAudioBoxPropertyHasAudio:         RETURN_UINT32(1);
+            case kAudioBoxPropertyHasVideo:         RETURN_UINT32(0);
+            case kAudioBoxPropertyHasMIDI:          RETURN_UINT32(0);
+            case kAudioBoxPropertyIsProtected:      RETURN_UINT32(0);
+            case kAudioBoxPropertyAcquired:         RETURN_UINT32(1);
+            case kAudioBoxPropertyAcquisitionFailed: RETURN_UINT32(0);
+
+            case kAudioObjectPropertyOwnedObjects:
+            case kAudioBoxPropertyDeviceList:
+                RETURN_OBJECTID(kEtherDeviceObjectID);
+
+            case kAudioObjectPropertyCustomPropertyInfoList:
+                *outDataSize = 0;
+                return kAudioHardwareNoError;
 
             default: return kAudioHardwareUnknownPropertyError;
         }
@@ -399,12 +678,16 @@ static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
         switch (address->mSelector) {
             case kAudioObjectPropertyBaseClass:    RETURN_UINT32(kAudioObjectClassID);
             case kAudioObjectPropertyClass:        RETURN_UINT32(kAudioDeviceClassID);
-            case kAudioObjectPropertyOwner:        RETURN_OBJECTID(kEtherPlugInObjectID);
+            case kAudioObjectPropertyOwner:        RETURN_OBJECTID(kEtherBoxObjectID);
             case kAudioObjectPropertyName:         RETURN_CFSTRING("Ether");
+            case kAudioObjectPropertyModelName:    RETURN_CFSTRING("Ether Virtual Audio");
             case kAudioObjectPropertyManufacturer: RETURN_CFSTRING("Ether Audio");
+            case kAudioObjectPropertyIdentify:     RETURN_UINT32(0);
             case kAudioDevicePropertyDeviceUID:    RETURN_CFSTRING("EtherDevice_UID");
             case kAudioDevicePropertyModelUID:     RETURN_CFSTRING("EtherModel_UID");
             case kAudioDevicePropertyConfigurationApplication: RETURN_CFSTRING("audio.ether.app");
+            case kAudioDevicePropertyIsHidden:     RETURN_UINT32(0);
+            case kAudioDevicePropertyClockDomain:  RETURN_UINT32(0);
 
             case kAudioDevicePropertyTransportType:     RETURN_UINT32(kAudioDeviceTransportTypeVirtual);
             case kAudioDevicePropertyDeviceCanBeDefaultDevice: RETURN_UINT32(1);
@@ -428,37 +711,99 @@ static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
                 return kAudioHardwareNoError;
             }
 
+            case kAudioDevicePropertyIcon: {
+                if (inDataSize < sizeof(CFURLRef)) return kAudioHardwareBadPropertySizeError;
+                CFURLRef url = CopyIconURL();
+                if (!url) return kAudioHardwareUnknownPropertyError;
+                *outDataSize = sizeof(CFURLRef);
+                *(CFURLRef*)outData = url;
+                return kAudioHardwareNoError;
+            }
+
             case kAudioDevicePropertyZeroTimeStampPeriod:
                 RETURN_UINT32(kEtherRingBufferFrames);
+
+            case kAudioDevicePropertyPreferredChannelsForStereo: {
+                if (inDataSize < 2 * sizeof(UInt32)) return kAudioHardwareBadPropertySizeError;
+                *outDataSize = 2 * sizeof(UInt32);
+                UInt32* channels = (UInt32*)outData;
+                channels[0] = 1;
+                channels[1] = 2;
+                return kAudioHardwareNoError;
+            }
+
+            case kAudioDevicePropertyPreferredChannelLayout: {
+                UInt32 layoutSize = offsetof(AudioChannelLayout, mChannelDescriptions);
+                if (inDataSize < layoutSize) return kAudioHardwareBadPropertySizeError;
+                *outDataSize = layoutSize;
+                AudioChannelLayout* layout = (AudioChannelLayout*)outData;
+                layout->mChannelLayoutTag = kAudioChannelLayoutTag_Stereo;
+                layout->mChannelBitmap = 0;
+                layout->mNumberChannelDescriptions = 0;
+                return kAudioHardwareNoError;
+            }
+
+            case kAudioDevicePropertyRelatedDevices:
+                RETURN_OBJECTID(kEtherDeviceObjectID);
 
             case kAudioDevicePropertyStreams: {
                 if (address->mScope == kAudioObjectPropertyScopeInput) {
                     RETURN_OBJECTID(kEtherInputStreamObjectID);
-                } else {
+                } else if (address->mScope == kAudioObjectPropertyScopeOutput) {
                     RETURN_OBJECTID(kEtherOutputStreamObjectID);
+                } else {
+                    // Global: both streams.
+                    if (inDataSize < 2 * sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
+                    *outDataSize = 2 * sizeof(AudioObjectID);
+                    AudioObjectID* ids = (AudioObjectID*)outData;
+                    ids[0] = kEtherInputStreamObjectID;
+                    ids[1] = kEtherOutputStreamObjectID;
+                    return kAudioHardwareNoError;
                 }
             }
 
             case kAudioObjectPropertyOwnedObjects: {
-                if (inDataSize < 2 * sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
-                *outDataSize = 2 * sizeof(AudioObjectID);
-                AudioObjectID* ids = (AudioObjectID*)outData;
-                ids[0] = kEtherInputStreamObjectID;
-                ids[1] = kEtherOutputStreamObjectID;
-                return kAudioHardwareNoError;
+                if (address->mScope == kAudioObjectPropertyScopeInput) {
+                    RETURN_OBJECTID(kEtherInputStreamObjectID);
+                } else if (address->mScope == kAudioObjectPropertyScopeOutput) {
+                    RETURN_OBJECTID(kEtherOutputStreamObjectID);
+                } else {
+                    if (inDataSize < 2 * sizeof(AudioObjectID)) return kAudioHardwareBadPropertySizeError;
+                    *outDataSize = 2 * sizeof(AudioObjectID);
+                    AudioObjectID* ids = (AudioObjectID*)outData;
+                    ids[0] = kEtherInputStreamObjectID;
+                    ids[1] = kEtherOutputStreamObjectID;
+                    return kAudioHardwareNoError;
+                }
             }
 
             case kAudioObjectPropertyControlList:
-            case kAudioObjectPropertyCustomPropertyInfoList:
+                // TEMP: disconnected while we debug the coreaudiod wedge.
                 *outDataSize = 0;
                 return kAudioHardwareNoError;
 
+            case kAudioObjectPropertyCustomPropertyInfoList: {
+                if (inDataSize < sizeof(AudioServerPlugInCustomPropertyInfo))
+                    return kAudioHardwareBadPropertySizeError;
+                AudioServerPlugInCustomPropertyInfo info = {};
+                info.mSelector          = kEtherEQParametersProperty;
+                info.mPropertyDataType  = kAudioServerPlugInCustomPropertyDataTypeCFPropertyList;
+                info.mQualifierDataType = kAudioServerPlugInCustomPropertyDataTypeNone;
+                *outDataSize = sizeof(info);
+                memcpy(outData, &info, sizeof(info));
+                return kAudioHardwareNoError;
+            }
+
             case kEtherEQParametersProperty: {
-                if (inDataSize < sizeof(EtherEQParams)) return kAudioHardwareBadPropertySizeError;
-                *outDataSize = sizeof(EtherEQParams);
+                if (inDataSize < sizeof(CFDataRef)) return kAudioHardwareBadPropertySizeError;
                 pthread_mutex_lock(&sDriverState->eqMutex);
-                memcpy(outData, &sDriverState->eqParams, sizeof(EtherEQParams));
+                CFDataRef data = CFDataCreate(nullptr,
+                                              (const UInt8*)&sDriverState->eqParams,
+                                              sizeof(EtherEQParams));
                 pthread_mutex_unlock(&sDriverState->eqMutex);
+                if (!data) return kAudioHardwareUnspecifiedError;
+                *outDataSize = sizeof(CFDataRef);
+                *(CFDataRef*)outData = data;  // caller owns the +1 retain
                 return kAudioHardwareNoError;
             }
 
@@ -508,12 +853,24 @@ static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
 static OSStatus Ether_SetPropertyData(AudioServerPlugInDriverRef driver, AudioObjectID objectID, pid_t clientPID, const AudioObjectPropertyAddress* address, UInt32 qualifierDataSize, const void* qualifierData, UInt32 inDataSize, const void* inData) {
 
     if (objectID == kEtherDeviceObjectID && address->mSelector == kEtherEQParametersProperty) {
-        if (inDataSize < sizeof(EtherEQParams)) return kAudioHardwareBadPropertySizeError;
+        if (inDataSize < sizeof(CFDataRef) || inData == nullptr) {
+            return kAudioHardwareBadPropertySizeError;
+        }
+        CFDataRef data = *(CFDataRef*)inData;
+        if (data == nullptr || CFGetTypeID(data) != CFDataGetTypeID()) {
+            return kAudioHardwareIllegalOperationError;
+        }
+        if (CFDataGetLength(data) < (CFIndex)sizeof(EtherEQParams)) {
+            return kAudioHardwareBadPropertySizeError;
+        }
         pthread_mutex_lock(&sDriverState->eqMutex);
-        memcpy(&sDriverState->eqParams, inData, sizeof(EtherEQParams));
+        memcpy(&sDriverState->eqParams, CFDataGetBytePtr(data), sizeof(EtherEQParams));
+        RecomputeAllCoefs();
         pthread_mutex_unlock(&sDriverState->eqMutex);
-        os_log(sLog, "EQ parameters updated from app (bypass=%u, globalGain=%.1f)",
-               sDriverState->eqParams.bypass, sDriverState->eqParams.globalGain);
+        os_log(sLog, "EQ params updated (bypass=%u, gain=%.1fdB, bands=%u)",
+               sDriverState->eqParams.bypass,
+               sDriverState->eqParams.globalGain,
+               sDriverState->eqParams.bandCount);
         return kAudioHardwareNoError;
     }
 
@@ -584,12 +941,38 @@ static OSStatus Ether_DoIOOperation(AudioServerPlugInDriverRef driver, AudioObje
 
     if (operationID == kAudioServerPlugInIOOperationWriteMix) {
         // ── System audio written to our device ───────────────────────────
-        // Store in ring buffer for the companion app to read and process.
+        // volume/mute (pre-EQ — gives EQ headroom when slider is down)
+        //   → EQ → master gain → soft-clip → ring buffer.
+        // Pure passthrough only when nothing's modifying the signal.
         float* src = (float*)ioMainBuffer;
-        UInt32 framesToWrite = ioBufferFrameSize;
-        UInt32 samplesToWrite = framesToWrite * kEtherNumChannels;
-        UInt64 writePos = sDriverState->ringWritePos.load(std::memory_order_relaxed);
+        const UInt32 framesToWrite  = ioBufferFrameSize;
+        const UInt32 samplesToWrite = framesToWrite * kEtherNumChannels;
+        const UInt32 bypass         = sDriverState->eqParams.bypass;
+        const UInt32 bandCount      = sDriverState->eqParams.bandCount;
+        const Float32 g             = sDriverState->globalGainLin;
+        const Float32 v             = sDriverState->volume;
+        const bool muted            = sDriverState->muted;
+        const bool needsProcessing  = muted || v != 1.0f || (!bypass && bandCount > 0) || g != 1.0f;
 
+        if (needsProcessing) {
+            if (muted) {
+                memset(src, 0, samplesToWrite * sizeof(float));
+            } else if (v != 1.0f) {
+                for (UInt32 i = 0; i < samplesToWrite; i++) src[i] *= v;
+            }
+            if (!bypass && bandCount > 0 && !muted) {
+                for (UInt32 ch = 0; ch < kEtherNumChannels; ch++) {
+                    ProcessChannel(src + ch, framesToWrite, kEtherNumChannels, ch, bandCount);
+                }
+            }
+            if (g != 1.0f || (!bypass && bandCount > 0)) {
+                for (UInt32 i = 0; i < samplesToWrite; i++) {
+                    src[i] = SoftClip(src[i] * g);
+                }
+            }
+        }
+
+        UInt64 writePos = sDriverState->ringWritePos.load(std::memory_order_relaxed);
         for (UInt32 i = 0; i < samplesToWrite; i++) {
             sDriverState->ringBuffer[(writePos + i) % (kEtherRingBufferFrames * kEtherNumChannels)] = src[i];
         }
