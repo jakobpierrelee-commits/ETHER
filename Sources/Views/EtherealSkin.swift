@@ -2,33 +2,13 @@ import SwiftUI
 
 // MARK: - Ethereal Skin (dev spike)
 //
-// A self-contained alternate skin for Ether. Not wired to EQController yet —
-// uses local state so the visual language can be evaluated in isolation.
-// Open via the "Skins" menu or `openWindow(id: "ethereal")`.
-
-// MARK: Mock model
-
-private struct EtherealBand: Identifiable {
-    let id = UUID()
-    var hz: Float
-    var gainDB: Float = 0  // -12 ... +12
-    let label: String
-}
-
-private final class EtherealMockState: ObservableObject {
-    @Published var bands: [EtherealBand] = [
-        EtherealBand(hz: 60,     label: "60"),
-        EtherealBand(hz: 250,    label: "250"),
-        EtherealBand(hz: 1_000,  label: "1k"),
-        EtherealBand(hz: 4_000,  label: "4k"),
-        EtherealBand(hz: 16_000, label: "16k"),
-    ]
-}
+// Alternate skin for Ether. Wired to a real EQController so dragging halos
+// shapes audio. Open via Skins menu (⌘⇧E) or `openWindow(id: "ethereal")`.
+// Lives alongside the existing ContentView — does not replace it.
 
 // MARK: Palette
 
 private enum EtherealPalette {
-    // Dawn-mist palette: deep indigo → violet → pale rose → off-white
     static let deep   = Color(.displayP3, red: 0.06, green: 0.05, blue: 0.14)
     static let violet = Color(.displayP3, red: 0.32, green: 0.22, blue: 0.55)
     static let rose   = Color(.displayP3, red: 0.78, green: 0.55, blue: 0.72)
@@ -43,9 +23,13 @@ private enum EtherealPalette {
 // MARK: Root
 
 struct EtherealSkinView: View {
-    @StateObject private var state = EtherealMockState()
-    @State private var time: TimeInterval = 0
+    @ObservedObject var controller: EQController
     @State private var activeBandID: UUID?
+
+    /// Bell bands only — lowCut/highCut surface in the disclosure layer (phase 2).
+    private var visibleBands: [EQBand] {
+        controller.bands.filter { $0.type == .bell }
+    }
 
     var body: some View {
         ZStack {
@@ -59,11 +43,11 @@ struct EtherealSkinView: View {
                     .padding(.top, 56)
                 Spacer()
                 eqStage
-                    .frame(maxWidth: 760)
-                    .padding(.horizontal, 48)
+                    .frame(maxWidth: 820)
+                    .padding(.horizontal, 32)
                 Spacer()
-                footer
-                    .padding(.bottom, 40)
+                bypassRow
+                    .padding(.bottom, 32)
             }
         }
         .frame(minWidth: 880, minHeight: 620)
@@ -81,28 +65,31 @@ struct EtherealSkinView: View {
                 .foregroundColor(EtherealPalette.textPrimary)
                 .shadow(color: EtherealPalette.glow.opacity(0.45), radius: 18, y: 0)
 
-            Text("a quieter eq")
+            Text(controller.bypassed ? "bypassed" : "a quieter eq")
                 .font(.system(size: 11, weight: .light, design: .default))
                 .tracking(6)
                 .textCase(.uppercase)
                 .foregroundColor(EtherealPalette.textTertiary)
+                .animation(.easeOut(duration: 0.4), value: controller.bypassed)
         }
     }
 
     // MARK: EQ stage
 
     private var eqStage: some View {
-        GeometryReader { geo in
-            let bandCount = state.bands.count
-            let stride = geo.size.width / CGFloat(bandCount)
-            let centers: [CGPoint] = state.bands.enumerated().map { i, band in
+        let bands = visibleBands
+        return GeometryReader { geo in
+            let stageHeight = geo.size.height - 56  // leave room for freq labels at bottom
+            let stride = geo.size.width / CGFloat(max(bands.count, 1))
+            let centers: [CGPoint] = bands.enumerated().map { i, band in
                 let x = stride * (CGFloat(i) + 0.5)
-                let y = yForGain(band.gainDB, height: geo.size.height)
+                let y = yForGain(band.gain, height: stageHeight)
                 return CGPoint(x: x, y: y)
             }
 
-            ZStack {
-                EQCurve(points: centers, height: geo.size.height)
+            ZStack(alignment: .top) {
+                // Curve
+                EQCurve(points: centers, height: stageHeight)
                     .stroke(
                         LinearGradient(
                             colors: [
@@ -118,72 +105,106 @@ struct EtherealSkinView: View {
                     )
                     .shadow(color: EtherealPalette.glow.opacity(0.6), radius: 14)
                     .shadow(color: EtherealPalette.violet.opacity(0.5), radius: 28)
+                    .frame(height: stageHeight)
+                    .opacity(controller.bypassed ? 0.18 : 1.0)
+                    .animation(.easeOut(duration: 0.4), value: controller.bypassed)
                     .allowsHitTesting(false)
 
-                ForEach(Array(state.bands.enumerated()), id: \.element.id) { i, band in
+                // Halos
+                ForEach(Array(bands.enumerated()), id: \.element.id) { i, band in
                     let center = centers[i]
                     BandHalo(
                         band: band,
+                        stageHeight: stageHeight,
+                        bypassed: controller.bypassed,
                         isActive: activeBandID == band.id,
-                        onDrag: { delta in
-                            let range: Float = 12
-                            let height = geo.size.height
-                            let perPoint = (range * 2) / Float(height)
-                            var next = state.bands[i].gainDB - Float(delta) * perPoint
-                            next = max(-12, min(12, next))
-                            state.bands[i].gainDB = next
-                            activeBandID = band.id
+                        onGainChange: { newGain in
+                            controller.setGain(bandID: band.id, gain: newGain)
                         },
-                        onRelease: { activeBandID = nil }
+                        onActiveChange: { active in
+                            activeBandID = active ? band.id : (activeBandID == band.id ? nil : activeBandID)
+                        }
                     )
                     .position(center)
                 }
+
+                // Frequency labels — anchored under each halo
+                ForEach(Array(bands.enumerated()), id: \.element.id) { i, band in
+                    let x = stride * (CGFloat(i) + 0.5)
+                    Text(prettyFreq(band.frequency))
+                        .font(.system(size: 10, weight: .light))
+                        .tracking(2)
+                        .foregroundColor(EtherealPalette.textSecondary)
+                        .position(x: x, y: stageHeight + 24)
+                }
             }
         }
-        .frame(height: 280)
+        .frame(height: 320)
     }
+
+    // MARK: bypass row (single quiet control at the bottom)
+
+    private var bypassRow: some View {
+        HStack(spacing: 28) {
+            Button(action: { controller.toggleGlobalBypass() }) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(controller.bypassed ? EtherealPalette.textTertiary : EtherealPalette.glow)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: controller.bypassed ? .clear : EtherealPalette.glow.opacity(0.7), radius: 4)
+                    Text(controller.bypassed ? "engage" : "bypass")
+                        .font(.system(size: 10, weight: .light))
+                        .tracking(4)
+                        .textCase(.uppercase)
+                        .foregroundColor(EtherealPalette.textSecondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { controller.reset() }) {
+                Text("reset")
+                    .font(.system(size: 10, weight: .light))
+                    .tracking(4)
+                    .textCase(.uppercase)
+                    .foregroundColor(EtherealPalette.textTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: helpers
 
     private func yForGain(_ gain: Float, height: CGFloat) -> CGFloat {
         let normalized = CGFloat((gain + 12) / 24) // 0..1
         return height * (1 - normalized)
     }
 
-    // MARK: footer
-
-    private var footer: some View {
-        HStack(spacing: 44) {
-            ForEach(state.bands) { band in
-                VStack(spacing: 4) {
-                    Text(band.label)
-                        .font(.system(size: 10, weight: .light))
-                        .tracking(2)
-                        .foregroundColor(EtherealPalette.textSecondary)
-                    Text(String(format: "%+.1f", band.gainDB))
-                        .font(.system(size: 9, weight: .light, design: .monospaced))
-                        .foregroundColor(EtherealPalette.textTertiary)
-                }
-                .frame(width: 60)
-            }
-        }
+    private func prettyFreq(_ hz: Float) -> String {
+        if hz < 1000 { return "\(Int(hz.rounded()))" }
+        let k = hz / 1000
+        if k < 10 { return String(format: "%.0fk", k) }
+        return String(format: "%.0fk", k)
     }
 }
 
 // MARK: - Band halo
 
 private struct BandHalo: View {
-    let band: EtherealBand
+    let band: EQBand
+    let stageHeight: CGFloat
+    let bypassed: Bool
     let isActive: Bool
-    let onDrag: (CGFloat) -> Void
-    let onRelease: () -> Void
+    let onGainChange: (Float) -> Void
+    let onActiveChange: (Bool) -> Void
 
-    @State private var dragStart: CGFloat?
-    @State private var startGain: Float = 0
+    @State private var startGain: Float?
     @State private var hovered = false
 
     var body: some View {
-        let intensity = min(1.0, abs(Double(band.gainDB)) / 12.0)
+        let intensity = min(1.0, abs(Double(band.gain)) / 12.0)
         let baseSize: CGFloat = 22
         let glowSize: CGFloat = baseSize + CGFloat(intensity) * 28 + (isActive ? 14 : 0)
+        let dimmed = bypassed ? 0.25 : 1.0
 
         ZStack {
             // Outer halo
@@ -219,9 +240,9 @@ private struct BandHalo: View {
                 )
                 .shadow(color: EtherealPalette.glow.opacity(0.8), radius: 6)
 
-            // Floating dB readout (only when active or hovered)
+            // Floating dB readout (active or hovered)
             if isActive || hovered {
-                Text(String(format: "%+.1f dB", band.gainDB))
+                Text(String(format: "%+.1f dB", band.gain))
                     .font(.system(size: 10, weight: .light, design: .monospaced))
                     .tracking(1)
                     .foregroundColor(EtherealPalette.textPrimary)
@@ -236,26 +257,30 @@ private struct BandHalo: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        .opacity(dimmed)
         .contentShape(Circle().size(width: 60, height: 60))
         .onHover { hovered = $0 }
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { g in
-                    if dragStart == nil {
-                        dragStart = g.startLocation.y
-                        startGain = band.gainDB
+                    if startGain == nil {
+                        startGain = band.gain
+                        onActiveChange(true)
                     }
-                    let delta = g.translation.height
-                    onDrag(delta)
+                    guard let anchor = startGain else { return }
+                    let perPoint = Float(24) / Float(stageHeight)
+                    let next = max(-12, min(12, anchor - Float(g.translation.height) * perPoint))
+                    onGainChange(next)
                 }
                 .onEnded { _ in
-                    dragStart = nil
-                    onRelease()
+                    startGain = nil
+                    onActiveChange(false)
                 }
         )
-        .animation(.easeOut(duration: 0.6), value: band.gainDB)
+        .animation(.easeOut(duration: 0.6), value: band.gain)
         .animation(.easeOut(duration: 0.25), value: isActive)
         .animation(.easeOut(duration: 0.25), value: hovered)
+        .animation(.easeOut(duration: 0.4), value: bypassed)
     }
 }
 
@@ -269,7 +294,6 @@ private struct EQCurve: Shape {
         var path = Path()
         guard points.count >= 2 else { return path }
 
-        // Anchor curve to the vertical midline at the edges so it fades in/out
         let mid = height / 2
         let entry = CGPoint(x: 0, y: mid)
         let exit  = CGPoint(x: rect.width, y: mid)
@@ -300,7 +324,6 @@ private struct EtherealBackground: View {
             ZStack {
                 EtherealPalette.deep
 
-                // Big diffuse violet glow
                 RadialGradient(
                     colors: [EtherealPalette.violet.opacity(0.55), .clear],
                     center: UnitPoint(x: 0.30 + drift, y: 0.35),
@@ -309,7 +332,6 @@ private struct EtherealBackground: View {
                 )
                 .blendMode(.screen)
 
-                // Warm rose glow
                 RadialGradient(
                     colors: [EtherealPalette.rose.opacity(0.32), .clear],
                     center: UnitPoint(x: 0.78 - drift2, y: 0.62),
@@ -318,12 +340,8 @@ private struct EtherealBackground: View {
                 )
                 .blendMode(.screen)
 
-                // Cool glow at top to suggest atmosphere
                 LinearGradient(
-                    colors: [
-                        EtherealPalette.mist.opacity(0.10),
-                        .clear,
-                    ],
+                    colors: [EtherealPalette.mist.opacity(0.10), .clear],
                     startPoint: .top,
                     endPoint: .center
                 )
@@ -344,7 +362,7 @@ private struct EtherealParticles: View {
                 let count = 80
                 for i in 0..<count {
                     let seed = Double(i) * 12.9898
-                    let baseX = (sin(seed) * 0.5 + 0.5)  // 0..1
+                    let baseX = (sin(seed) * 0.5 + 0.5)
                     let baseY = (cos(seed * 1.7) * 0.5 + 0.5)
                     let speed = 0.02 + (sin(seed * 3.1) * 0.5 + 0.5) * 0.05
                     let driftX = sin(t * speed + seed) * 0.08
@@ -367,6 +385,6 @@ private struct EtherealParticles: View {
 // MARK: - Preview
 
 #Preview {
-    EtherealSkinView()
+    EtherealSkinView(controller: EQController())
         .frame(width: 960, height: 680)
 }

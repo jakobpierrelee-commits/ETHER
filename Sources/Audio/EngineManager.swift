@@ -42,6 +42,26 @@ final class EngineManager: ObservableObject {
     @Published var selectedOutputDevice: AudioDevice?
     @Published var driverInstalled: Bool = false
 
+    /// Opt-in: when on, the app reads audio from the driver via HAL IOProc to
+    /// drive spectrum/visualizers — but macOS shows its recording indicator.
+    /// When off (default), the driver itself forwards processed audio to the
+    /// physical output and the app never touches input streams. No mic dot,
+    /// but spectrum/visualizers stay flat.
+    ///
+    /// Requires app restart to take effect. Live-toggling the audio engine
+    /// state proved fragile (race conditions with async forwarding setup);
+    /// we trade convenience for reliability.
+    @Published var enableVisualizations: Bool = UserDefaults.standard.bool(forKey: "audio.ether.enableVisualizations") {
+        didSet {
+            guard oldValue != enableVisualizations else { return }
+            UserDefaults.standard.set(enableVisualizations, forKey: "audio.ether.enableVisualizations")
+        }
+    }
+
+    /// Snapshot of the visualizations setting at app launch. The Preferences UI
+    /// shows a "restart required" notice when the live setting differs from this.
+    let visualizationsAtLaunch: Bool = UserDefaults.standard.bool(forKey: "audio.ether.enableVisualizations")
+
     private var outputEngine: AVAudioEngine?
     private var eq: AVAudioUnitEQ?
     private var sourceNode: AVAudioSourceNode?
@@ -96,6 +116,12 @@ final class EngineManager: ObservableObject {
     @Published var visualSyncSec: Float = 0 {
         didSet {
             UserDefaults.standard.set(visualSyncSec, forKey: "audio.ether.visualOffset")
+            // Phase B: delay lives in the driver's forwarding path so the
+            // physical output is pushed back to align with naturally-lagged
+            // visualizers. (The legacy AVAudioUnitDelay node is now in the
+            // silent analysis path and has no audible effect.)
+            let samples = UInt32(max(0, visualSyncSec) * 48000) * 2  // stereo interleaved
+            DriverCommunicator.setForwardingDelaySamples(samples)
             syncDelayNode?.delayTime = TimeInterval(visualSyncSec)
         }
     }
@@ -181,6 +207,16 @@ final class EngineManager: ObservableObject {
             logger.warning("Could not switch system output to Ether driver — user may need to do it manually")
         }
 
+        // Tell the driver to forward processed audio internally to the user's
+        // chosen physical output. Driver-internal forwarding eliminates the
+        // need for the app's HAL IOProc (and the orange mic dot it triggers).
+        DriverCommunicator.setTargetDeviceUID(outputDevice.uid)
+
+        // Push current visual-sync setting into the driver so audio is
+        // delayed to align with the naturally-lagged visualizers.
+        let delaySamples = UInt32(max(0, visualSyncSec) * 48000) * 2
+        DriverCommunicator.setForwardingDelaySamples(delaySamples)
+
         do {
             try buildAndStart(captureID: captureID, outputDevice: outputDevice)
 
@@ -193,9 +229,12 @@ final class EngineManager: ObservableObject {
                 }
             }
 
-            // Start at 0 volume, fade up over 50ms to eliminate startup click
+            // AVAudioEngine is analysis-only now — the driver handles all
+            // physical output via internal forwarding. Silencing the mixer
+            // prevents a delayed duplicate (the visual-sync delay node would
+            // otherwise output a doubled, time-shifted copy on top of the
+            // driver's clean output).
             outputEngine?.mainMixerNode.outputVolume = 0
-            fadeVolume(to: 1, duration: 0.05) {}
             outputDeviceName = outputDevice.name
             inputDeviceName = "Ether"
             status = .running
@@ -210,6 +249,9 @@ final class EngineManager: ObservableObject {
     }
 
     func stop() {
+        // Tell the driver to stop forwarding before tearing anything else down
+        DriverCommunicator.setTargetDeviceUID(nil)
+
         // Soft fade-out to avoid click on teardown
         fadeVolume(to: 0, duration: 0.05) { [weak self] in
             guard let self = self else { return }
@@ -245,6 +287,7 @@ final class EngineManager: ObservableObject {
     /// Called from AppDelegate on app termination.
     /// Synchronously tears down audio and restores the user's output device.
     func emergencyRestore() {
+        DriverCommunicator.setTargetDeviceUID(nil)
         teardown()
         if let previous = previousDefaultOutputDeviceID {
             _ = SystemAudioRouter.setDefaultOutputDevice(previous)
@@ -391,42 +434,48 @@ final class EngineManager: ObservableObject {
 
         logger.log("Output engine running on \(outputDevice.name, privacy: .public)")
 
-        // ── Input path: HAL IOProc on the Ether driver ───────────────
-        // Using Core Audio HAL directly bypasses AVFoundation's microphone
-        // permission system, so no orange "mic in use" indicator appears.
-        self.captureDeviceID = captureID
-        let analyzerRing = FloatRingBuffer(capacityFrames: 8192, channelCount: 2)
-        self.analyzerRingBuffer = analyzerRing
+        // ── Input path: HAL IOProc on the Ether driver (OPT-IN) ──────────
+        // Reading input streams from the driver is what triggers macOS's
+        // orange recording indicator. We only do it when the user has
+        // explicitly enabled visualizations — otherwise the driver-internal
+        // forwarding (set above via setTargetDeviceUID) is the entire
+        // output path and the app stays out of the input path entirely.
+        if enableVisualizations {
+            self.captureDeviceID = captureID
+            let analyzerRing = FloatRingBuffer(capacityFrames: 8192, channelCount: 2)
+            self.analyzerRingBuffer = analyzerRing
 
-        // Retain the context and hand the raw class pointer to Core Audio.
-        // We balance the retain in teardown with Unmanaged.release().
-        let context = IOProcContext(ring: ring, analyzerRing: analyzerRing)
-        let contextPtr = Unmanaged.passRetained(context).toOpaque()
-        self.ioProcContextPtr = contextPtr
+            // Retain the context and hand the raw class pointer to Core Audio.
+            // We balance the retain in teardown with Unmanaged.release().
+            let context = IOProcContext(ring: ring, analyzerRing: analyzerRing)
+            let contextPtr = Unmanaged.passRetained(context).toOpaque()
+            self.ioProcContextPtr = contextPtr
 
-        var procID: AudioDeviceIOProcID?
-        let createStatus = AudioDeviceCreateIOProcID(
-            captureID,
-            etherIOProc,
-            contextPtr,
-            &procID
-        )
-        guard createStatus == noErr, let procID = procID else {
-            Unmanaged<IOProcContext>.fromOpaque(contextPtr).release()
-            self.ioProcContextPtr = nil
-            throw EngineError.deviceSetFailed("Ether IOProc", createStatus)
+            var procID: AudioDeviceIOProcID?
+            let createStatus = AudioDeviceCreateIOProcID(
+                captureID,
+                etherIOProc,
+                contextPtr,
+                &procID
+            )
+            guard createStatus == noErr, let procID = procID else {
+                Unmanaged<IOProcContext>.fromOpaque(contextPtr).release()
+                self.ioProcContextPtr = nil
+                throw EngineError.deviceSetFailed("Ether IOProc", createStatus)
+            }
+            self.captureProcID = procID
+
+            let startStatus = AudioDeviceStart(captureID, procID)
+            guard startStatus == noErr else {
+                throw EngineError.deviceSetFailed("Ether IOProc start", startStatus)
+            }
+
+            // Main-thread timer: pull recent samples from analyzer ring → spectrum
+            startAnalyzerTimer()
+            logger.log("Pipeline active (visualizations on): Ether driver → EQ → \(outputDevice.name, privacy: .public)")
+        } else {
+            logger.log("Pipeline active (driver-internal forwarding): Ether driver → EQ → \(outputDevice.name, privacy: .public)")
         }
-        self.captureProcID = procID
-
-        let startStatus = AudioDeviceStart(captureID, procID)
-        guard startStatus == noErr else {
-            throw EngineError.deviceSetFailed("Ether IOProc start", startStatus)
-        }
-
-        // Main-thread timer: pull recent samples from analyzer ring → spectrum
-        startAnalyzerTimer()
-
-        logger.log("Pipeline active (HAL IOProc): Ether driver → EQ → \(outputDevice.name, privacy: .public)")
     }
 
     private var ioProcContextPtr: UnsafeMutableRawPointer?
@@ -534,8 +583,9 @@ final class EngineManager: ObservableObject {
                 eq.bands[i].bypass = true
             }
         }
-        // Master gain is now driver-side; keep mixer at unity.
-        outputEngine?.mainMixerNode.outputVolume = 1.0
+        // Driver handles all output now (Phase B). AVAudioEngine stays muted —
+        // it only exists to feed the spectrum tap when visualizations are on.
+        outputEngine?.mainMixerNode.outputVolume = 0
     }
 
     private func setDevice(_ deviceID: AudioDeviceID, on audioUnit: AudioUnit, label: String) throws {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <CoreAudio/AudioServerPlugIn.h>
+#include <CoreAudio/CoreAudio.h>          // HAL client side — needed for forwarding IOProc
 #include <CoreFoundation/CoreFoundation.h>
 #include <mach/mach_time.h>
 #include <pthread.h>
@@ -33,9 +34,17 @@ static const UInt32   kEtherBufferFrameSize = 512;
 // Ring buffer size: enough for ~0.5s at 48kHz stereo
 static const UInt32   kEtherRingBufferFrames = 32768;
 
-// Custom property for EQ parameters (app ↔ driver communication)
-// 'EtEQ' = 0x45744551
-static const AudioObjectPropertySelector kEtherEQParametersProperty = 0x45744551;
+// Custom properties for app ↔ driver communication.
+//   'EtEQ' = EQ parameters (CFData wrapping EtherEQParams)
+//   'EtTD' = target physical output device UID (CFString); driver forwards
+//           processed audio to this device internally so the app no longer
+//           needs to read input streams from us — kills the orange mic dot.
+//   'EtFL' = Forwarding output Latency in samples (CFData wrapping UInt32);
+//           driver delays its physical output by this many samples so audio
+//           lines up with visuals (which naturally lag ~200ms behind).
+static const AudioObjectPropertySelector kEtherEQParametersProperty       = 0x45744551;
+static const AudioObjectPropertySelector kEtherTargetDeviceUIDProperty    = 0x45745444;
+static const AudioObjectPropertySelector kEtherForwardingDelayProperty    = 0x4574464c;
 
 // ─── EQ Band ────────────────────────────────────────────────────────────────
 // filterType matches the Swift EQFilterType enum raw values:
@@ -106,4 +115,18 @@ struct EtherDriverState {
     // Volume / mute
     Float32 volume{1.0f};
     bool    muted{false};
+
+    // Phase B: internal forwarding to a physical output device.
+    // App writes target UID via kEtherTargetDeviceUIDProperty; driver opens
+    // an HAL IOProc on it and pumps the ring buffer to its output stream.
+    AudioObjectID         targetDeviceID{kAudioObjectUnknown};
+    AudioDeviceIOProcID   targetProcID{nullptr};
+    CFStringRef           targetDeviceUID{nullptr};        // retained
+    pthread_mutex_t       forwardingMutex = PTHREAD_MUTEX_INITIALIZER;
+    // Separate read pointer so the forwarding IOProc doesn't fight with the
+    // legacy ReadInput operation (which advances ringReadPos).
+    std::atomic<UInt64>   forwardingReadPos{0};
+    // Output delay in samples (interleaved): physical output lags behind
+    // WriteMix by this many samples so audio lines up with delayed visuals.
+    std::atomic<UInt32>   forwardingDelaySamples{0};
 };

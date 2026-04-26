@@ -10,6 +10,15 @@ enum DriverCommunicator {
 
     /// Custom property selector for EQ parameters ('EtEQ' = 0x45744551)
     private static let eqPropertySelector = AudioObjectPropertySelector(0x45744551)
+    /// Custom property selector for the target physical output device UID ('EtTD').
+    /// Driver forwards processed audio to this device internally — eliminates the need
+    /// for the app to register an HAL IOProc on the driver's input scope (which would
+    /// trigger macOS's orange microphone indicator).
+    private static let targetDevicePropertySelector = AudioObjectPropertySelector(0x45745444)
+    /// Custom property selector for the forwarding output delay in samples ('EtFL').
+    /// Driver pushes its physical output back by this many samples so audio aligns
+    /// with the naturally-lagged visualizations.
+    private static let forwardingDelayPropertySelector = AudioObjectPropertySelector(0x4574464c)
 
     /// Stable UID our driver advertises (see Driver/EtherDriver.cpp).
     static let driverDeviceUID = "EtherDevice_UID"
@@ -118,6 +127,55 @@ enum DriverCommunicator {
         }
         if status != noErr {
             logger.warning("setEQParams failed: OSStatus \(status, privacy: .public)")
+            return false
+        }
+        return true
+    }
+
+    /// Tell the driver how many samples to delay its physical output by, so
+    /// audio lines up with the naturally-lagged visualizers. The driver caps
+    /// this internally; passing 0 disables the delay.
+    @discardableResult
+    static func setForwardingDelaySamples(_ samples: UInt32) -> Bool {
+        guard let deviceID = findEtherDevice() else { return false }
+        var copy = samples
+        let data = withUnsafeBytes(of: &copy) { buf -> CFData in
+            CFDataCreate(nil, buf.baseAddress?.assumingMemoryBound(to: UInt8.self), buf.count)
+        }
+        var dataRef: CFData? = data
+        var address = AudioObjectPropertyAddress(
+            mSelector: forwardingDelayPropertySelector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let size = UInt32(MemoryLayout<CFData?>.size)
+        let status = withUnsafePointer(to: &dataRef) { ptr in
+            AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, ptr)
+        }
+        if status != noErr {
+            logger.warning("setForwardingDelaySamples failed: OSStatus \(status, privacy: .public)")
+            return false
+        }
+        return true
+    }
+
+    /// Tell the driver to forward processed audio to a specific physical output
+    /// (by UID). Pass nil/empty to stop forwarding.
+    @discardableResult
+    static func setTargetDeviceUID(_ uid: String?) -> Bool {
+        guard let deviceID = findEtherDevice() else { return false }
+        var address = AudioObjectPropertyAddress(
+            mSelector: targetDevicePropertySelector,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var cfUID: CFString? = (uid?.isEmpty == false) ? (uid! as CFString) : ("" as CFString)
+        let size = UInt32(MemoryLayout<CFString?>.size)
+        let status = withUnsafePointer(to: &cfUID) { ptr in
+            AudioObjectSetPropertyData(deviceID, &address, 0, nil, size, ptr)
+        }
+        if status != noErr {
+            logger.warning("setTargetDeviceUID failed: OSStatus \(status, privacy: .public)")
             return false
         }
         return true

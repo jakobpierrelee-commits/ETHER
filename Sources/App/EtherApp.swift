@@ -142,7 +142,8 @@ struct EtherApp: App {
 
         // ── Ethereal skin (dev spike) ──────────────────────────────────────
         Window("Ether — Ethereal", id: "ethereal") {
-            EtherealSkinView()
+            EtherealSkinView(controller: eqController)
+                .environmentObject(engineManager)
         }
         .defaultSize(width: 960, height: 680)
         .windowStyle(.hiddenTitleBar)

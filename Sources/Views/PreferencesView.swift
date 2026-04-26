@@ -29,6 +29,9 @@ struct PreferencesView: View {
                 // ── Hotkeys ─────────────────────────────────────
                 hotkeysSection
 
+                // ── Visualizations ──────────────────────────────
+                visualizationsSection
+
                 // ── Startup ─────────────────────────────────────
                 startupSection
 
@@ -198,6 +201,52 @@ struct PreferencesView: View {
                 )
                 .foregroundColor(.etherAccent)
         }
+    }
+
+    // MARK: - Visualizations
+
+    private var visualizationsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            EtherSectionHeader(text: "Visualizations")
+
+            HStack {
+                Toggle("Enable waveform visualizations", isOn: $engine.enableVisualizations)
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                Spacer()
+            }
+
+            Text("Powers the spectrum trace, mini-player visualizer, sphere, and peak meter. macOS will show its recording indicator at the top of the screen while this is on — that's macOS's standard prompt for any app reading audio, including loopback. Turn off for a quieter UI and no indicator.")
+                .font(.etherMono(9))
+                .foregroundColor(.etherTextTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if engine.enableVisualizations != engine.visualizationsAtLaunch {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.clockwise.circle.fill")
+                        .foregroundColor(.etherAccent)
+                    Text("Restart Ether to apply.")
+                        .font(.etherMono(10, weight: .medium))
+                        .foregroundColor(.etherAccent)
+                    Spacer()
+                    Button("Restart Now") {
+                        let task = Process()
+                        task.launchPath = "/bin/sh"
+                        task.arguments = [
+                            "-c",
+                            "sleep 0.5 && open '\(Bundle.main.bundlePath)'"
+                        ]
+                        try? task.run()
+                        NSApp.terminate(nil)
+                    }
+                    .font(.etherMono(10))
+                    .buttonStyle(.plain)
+                    .foregroundColor(.etherAccent)
+                }
+                .padding(.top, 4)
+            }
+        }
+        .etherPanel()
     }
 
     // MARK: - Startup

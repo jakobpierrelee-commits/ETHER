@@ -183,6 +183,173 @@ static inline void ProcessChannel(float* samples, UInt32 frames, UInt32 stride,
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// MARK: - Phase B: Internal Forwarding to Physical Output
+// ═══════════════════════════════════════════════════════════════════════════════
+// The driver runs inside the Core-Audio-Driver-Service.helper process (a child
+// of coreaudiod). That process is allowed to use the public CoreAudio HAL APIs
+// to register IOProcs on other devices. By doing so, the Ether app no longer
+// needs to read input streams from us — which kills the orange "mic in use"
+// indicator at the menu bar.
+//
+// Flow: app writes EQ'd audio → ring buffer (in WriteMix); our forwarding
+// IOProc on the target device pulls from that ring and writes to the device's
+// output buffer.
+
+static OSStatus EtherForwardingIOProc(AudioObjectID inDevice,
+                                      const AudioTimeStamp* inNow,
+                                      const AudioBufferList* inInputData,
+                                      const AudioTimeStamp* inInputTime,
+                                      AudioBufferList* outOutputData,
+                                      const AudioTimeStamp* inOutputTime,
+                                      void* inClientData);
+
+// Look up a device by its UID. Returns kAudioObjectUnknown on failure.
+static AudioObjectID FindDeviceByUID(CFStringRef uid) {
+    if (!uid) return kAudioObjectUnknown;
+    AudioObjectPropertyAddress addr = {
+        kAudioHardwarePropertyTranslateUIDToDevice,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain
+    };
+    AudioObjectID deviceID = kAudioObjectUnknown;
+    UInt32 size = sizeof(AudioObjectID);
+    OSStatus s = AudioObjectGetPropertyData(kAudioObjectSystemObject, &addr,
+                                            sizeof(CFStringRef), &uid, &size, &deviceID);
+    if (s != noErr || deviceID == kAudioObjectUnknown || deviceID == kEtherDeviceObjectID) {
+        return kAudioObjectUnknown;
+    }
+    return deviceID;
+}
+
+// Stop and tear down any active forwarding. Must hold forwardingMutex.
+static void StopForwardingLocked() {
+    if (!sDriverState) return;
+    if (sDriverState->targetProcID && sDriverState->targetDeviceID != kAudioObjectUnknown) {
+        AudioDeviceStop(sDriverState->targetDeviceID, sDriverState->targetProcID);
+        AudioDeviceDestroyIOProcID(sDriverState->targetDeviceID, sDriverState->targetProcID);
+        os_log(sLog, "Forwarding stopped (device=%u)", (unsigned)sDriverState->targetDeviceID);
+    }
+    sDriverState->targetProcID = nullptr;
+    sDriverState->targetDeviceID = kAudioObjectUnknown;
+    if (sDriverState->targetDeviceUID) {
+        CFRelease(sDriverState->targetDeviceUID);
+        sDriverState->targetDeviceUID = nullptr;
+    }
+}
+
+// Start forwarding to the device matching the given UID. Empty/null UID = stop.
+// Dispatches the actual HAL calls to a background queue — calling
+// AudioDeviceCreateIOProcID/Start synchronously from inside SetPropertyData
+// deadlocks because coreaudiod is blocked waiting for THIS Set to return
+// before it can service our HAL calls. Async = both sides make progress.
+static dispatch_queue_t sForwardingQueue = dispatch_queue_create("audio.ether.driver.forwarding", DISPATCH_QUEUE_SERIAL);
+
+static void StartForwardingAsync(CFStringRef newUID) {
+    CFStringRef retainedUID = newUID ? (CFStringRef)CFRetain(newUID) : nullptr;
+    dispatch_async(sForwardingQueue, ^{
+        pthread_mutex_lock(&sDriverState->forwardingMutex);
+        StopForwardingLocked();
+        if (!retainedUID || CFStringGetLength(retainedUID) == 0) {
+            if (retainedUID) CFRelease(retainedUID);
+            pthread_mutex_unlock(&sDriverState->forwardingMutex);
+            return;
+        }
+        AudioObjectID dev = FindDeviceByUID(retainedUID);
+        if (dev == kAudioObjectUnknown) {
+            os_log(sLog, "Forwarding: no device matches UID");
+            CFRelease(retainedUID);
+            pthread_mutex_unlock(&sDriverState->forwardingMutex);
+            return;
+        }
+        AudioDeviceIOProcID procID = nullptr;
+        OSStatus s = AudioDeviceCreateIOProcID(dev, EtherForwardingIOProc, nullptr, &procID);
+        if (s != noErr || !procID) {
+            os_log(sLog, "Forwarding: CreateIOProcID failed (status=%d)", s);
+            CFRelease(retainedUID);
+            pthread_mutex_unlock(&sDriverState->forwardingMutex);
+            return;
+        }
+        s = AudioDeviceStart(dev, procID);
+        if (s != noErr) {
+            AudioDeviceDestroyIOProcID(dev, procID);
+            os_log(sLog, "Forwarding: AudioDeviceStart failed (status=%d)", s);
+            CFRelease(retainedUID);
+            pthread_mutex_unlock(&sDriverState->forwardingMutex);
+            return;
+        }
+        sDriverState->targetDeviceID  = dev;
+        sDriverState->targetProcID    = procID;
+        sDriverState->targetDeviceUID = retainedUID;  // ownership transferred
+        // Initialize forwarding read pointer behind the write head by:
+        //   reservoir (drift slack) + delaySamples (visual-sync compensation).
+        const UInt32 reservoirSamples = 1024 * kEtherNumChannels;  // ~21ms @48k
+        const UInt32 delaySamples = sDriverState->forwardingDelaySamples.load(std::memory_order_acquire);
+        const UInt32 totalLag = reservoirSamples + delaySamples;
+        UInt64 wp = sDriverState->ringWritePos.load(std::memory_order_acquire);
+        sDriverState->forwardingReadPos.store(
+            wp > totalLag ? wp - totalLag : 0,
+            std::memory_order_release);
+        os_log(sLog, "Forwarding started (device=%u, reservoir=%u frames, delay=%u frames)",
+               (unsigned)dev, reservoirSamples / kEtherNumChannels, delaySamples / kEtherNumChannels);
+        pthread_mutex_unlock(&sDriverState->forwardingMutex);
+    });
+}
+
+// IOProc on the target physical device: pull from our ring, write to its output.
+// Runs on the target device's audio thread — no allocations, no locks, no logging.
+//
+// Uses its own forwardingReadPos so it doesn't fight the legacy ReadInput op.
+// Underrun guard: if WriteMix hasn't put enough samples in the ring yet,
+// output silence rather than reading stale buffer contents.
+static OSStatus EtherForwardingIOProc(AudioObjectID inDevice,
+                                      const AudioTimeStamp* inNow,
+                                      const AudioBufferList* inInputData,
+                                      const AudioTimeStamp* inInputTime,
+                                      AudioBufferList* outOutputData,
+                                      const AudioTimeStamp* inOutputTime,
+                                      void* inClientData) {
+    if (!sDriverState || !outOutputData || outOutputData->mNumberBuffers == 0) {
+        return noErr;
+    }
+    AudioBuffer& buf = outOutputData->mBuffers[0];
+    if (!buf.mData) return noErr;
+    const UInt32 outFrames   = buf.mDataByteSize / (buf.mNumberChannels * sizeof(float));
+    const UInt32 outChannels = buf.mNumberChannels;
+    float* dst = (float*)buf.mData;
+    const UInt32 ringSize = kEtherRingBufferFrames * kEtherNumChannels;
+    const UInt32 needed   = outFrames * kEtherNumChannels;
+
+    UInt64 writePos = sDriverState->ringWritePos.load(std::memory_order_acquire);
+    UInt64 readPos  = sDriverState->forwardingReadPos.load(std::memory_order_relaxed);
+
+    // Underrun: not enough samples queued. Output silence and DO NOT advance
+    // readPos — wait for WriteMix to catch up.
+    if (writePos < readPos || (writePos - readPos) < needed) {
+        memset(dst, 0, buf.mDataByteSize);
+        return noErr;
+    }
+
+    // Overrun guard: if writer has lapped us, drop forward to recent audio.
+    if ((writePos - readPos) > ringSize - needed) {
+        readPos = writePos > needed ? writePos - needed : 0;
+    }
+
+    for (UInt32 f = 0; f < outFrames; f++) {
+        const float l = sDriverState->ringBuffer[(readPos + f * 2 + 0) % ringSize];
+        const float r = sDriverState->ringBuffer[(readPos + f * 2 + 1) % ringSize];
+        if (outChannels >= 2) {
+            dst[f * outChannels + 0] = l;
+            dst[f * outChannels + 1] = r;
+            for (UInt32 c = 2; c < outChannels; c++) dst[f * outChannels + c] = 0.0f;
+        } else {
+            dst[f] = (l + r) * 0.5f;
+        }
+    }
+    sDriverState->forwardingReadPos.store(readPos + needed, std::memory_order_release);
+    return noErr;
+}
+
 // COM interface functions
 static HRESULT   Ether_QueryInterface(void* driver, REFIID iid, LPVOID* ppv);
 static ULONG     Ether_AddRef(void* driver);
@@ -392,7 +559,9 @@ static Boolean Ether_HasProperty(AudioServerPlugInDriverRef driver, AudioObjectI
 
 static OSStatus Ether_IsPropertySettable(AudioServerPlugInDriverRef driver, AudioObjectID objectID, pid_t clientPID, const AudioObjectPropertyAddress* address, Boolean* outIsSettable) {
     *outIsSettable = false;
-    if (address->mSelector == kEtherEQParametersProperty) {
+    if (address->mSelector == kEtherEQParametersProperty ||
+        address->mSelector == kEtherTargetDeviceUIDProperty ||
+        address->mSelector == kEtherForwardingDelayProperty) {
         *outIsSettable = true;
     }
     if (objectID == kEtherOutputVolumeControlObjectID &&
@@ -492,7 +661,7 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
                 return kAudioHardwareNoError;
 
             case kAudioObjectPropertyCustomPropertyInfoList:
-                *outDataSize = sizeof(AudioServerPlugInCustomPropertyInfo);
+                *outDataSize = 3 * sizeof(AudioServerPlugInCustomPropertyInfo);
                 return kAudioHardwareNoError;
 
             case kAudioDevicePropertyNominalSampleRate:
@@ -548,6 +717,14 @@ static OSStatus Ether_GetPropertyDataSize(AudioServerPlugInDriverRef driver, Aud
 
             case kEtherEQParametersProperty:
                 // Property is exposed as CFDataRef wrapping the raw struct.
+                *outDataSize = sizeof(CFDataRef);
+                return kAudioHardwareNoError;
+
+            case kEtherTargetDeviceUIDProperty:
+                *outDataSize = sizeof(CFStringRef);
+                return kAudioHardwareNoError;
+
+            case kEtherForwardingDelayProperty:
                 *outDataSize = sizeof(CFDataRef);
                 return kAudioHardwareNoError;
 
@@ -854,14 +1031,20 @@ static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
             }
 
             case kAudioObjectPropertyCustomPropertyInfoList: {
-                if (inDataSize < sizeof(AudioServerPlugInCustomPropertyInfo))
-                    return kAudioHardwareBadPropertySizeError;
-                AudioServerPlugInCustomPropertyInfo info = {};
-                info.mSelector          = kEtherEQParametersProperty;
-                info.mPropertyDataType  = kAudioServerPlugInCustomPropertyDataTypeCFPropertyList;
-                info.mQualifierDataType = kAudioServerPlugInCustomPropertyDataTypeNone;
-                *outDataSize = sizeof(info);
-                memcpy(outData, &info, sizeof(info));
+                const UInt32 needed = 3 * sizeof(AudioServerPlugInCustomPropertyInfo);
+                if (inDataSize < needed) return kAudioHardwareBadPropertySizeError;
+                AudioServerPlugInCustomPropertyInfo* infos =
+                    (AudioServerPlugInCustomPropertyInfo*)outData;
+                infos[0].mSelector          = kEtherEQParametersProperty;
+                infos[0].mPropertyDataType  = kAudioServerPlugInCustomPropertyDataTypeCFPropertyList;
+                infos[0].mQualifierDataType = kAudioServerPlugInCustomPropertyDataTypeNone;
+                infos[1].mSelector          = kEtherTargetDeviceUIDProperty;
+                infos[1].mPropertyDataType  = kAudioServerPlugInCustomPropertyDataTypeCFString;
+                infos[1].mQualifierDataType = kAudioServerPlugInCustomPropertyDataTypeNone;
+                infos[2].mSelector          = kEtherForwardingDelayProperty;
+                infos[2].mPropertyDataType  = kAudioServerPlugInCustomPropertyDataTypeCFPropertyList;
+                infos[2].mQualifierDataType = kAudioServerPlugInCustomPropertyDataTypeNone;
+                *outDataSize = needed;
                 return kAudioHardwareNoError;
             }
 
@@ -875,6 +1058,27 @@ static OSStatus Ether_GetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
                 if (!data) return kAudioHardwareUnspecifiedError;
                 *outDataSize = sizeof(CFDataRef);
                 *(CFDataRef*)outData = data;  // caller owns the +1 retain
+                return kAudioHardwareNoError;
+            }
+
+            case kEtherTargetDeviceUIDProperty: {
+                if (inDataSize < sizeof(CFStringRef)) return kAudioHardwareBadPropertySizeError;
+                pthread_mutex_lock(&sDriverState->forwardingMutex);
+                CFStringRef uid = sDriverState->targetDeviceUID;
+                if (uid) CFRetain(uid);
+                pthread_mutex_unlock(&sDriverState->forwardingMutex);
+                *outDataSize = sizeof(CFStringRef);
+                *(CFStringRef*)outData = uid ? uid : CFSTR("");
+                return kAudioHardwareNoError;
+            }
+
+            case kEtherForwardingDelayProperty: {
+                if (inDataSize < sizeof(CFDataRef)) return kAudioHardwareBadPropertySizeError;
+                UInt32 samples = sDriverState->forwardingDelaySamples.load(std::memory_order_relaxed);
+                CFDataRef data = CFDataCreate(nullptr, (const UInt8*)&samples, sizeof(samples));
+                if (!data) return kAudioHardwareUnspecifiedError;
+                *outDataSize = sizeof(CFDataRef);
+                *(CFDataRef*)outData = data;
                 return kAudioHardwareNoError;
             }
 
@@ -1054,6 +1258,49 @@ static OSStatus Ether_SetPropertyData(AudioServerPlugInDriverRef driver, AudioOb
                sDriverState->eqParams.bypass,
                sDriverState->eqParams.globalGain,
                sDriverState->eqParams.bandCount);
+        return kAudioHardwareNoError;
+    }
+
+    if (objectID == kEtherDeviceObjectID && address->mSelector == kEtherTargetDeviceUIDProperty) {
+        if (inDataSize < sizeof(CFStringRef) || inData == nullptr) {
+            return kAudioHardwareBadPropertySizeError;
+        }
+        CFStringRef newUID = *(CFStringRef*)inData;
+        if (newUID && CFGetTypeID(newUID) != CFStringGetTypeID()) {
+            return kAudioHardwareIllegalOperationError;
+        }
+        // Async: cannot make HAL calls from inside SetPropertyData (deadlock)
+        StartForwardingAsync(newUID);
+        return kAudioHardwareNoError;
+    }
+
+    if (objectID == kEtherDeviceObjectID && address->mSelector == kEtherForwardingDelayProperty) {
+        if (inDataSize < sizeof(CFDataRef) || inData == nullptr) {
+            return kAudioHardwareBadPropertySizeError;
+        }
+        CFDataRef data = *(CFDataRef*)inData;
+        if (!data || CFGetTypeID(data) != CFDataGetTypeID() ||
+            CFDataGetLength(data) < (CFIndex)sizeof(UInt32)) {
+            return kAudioHardwareIllegalOperationError;
+        }
+        UInt32 newSamples = 0;
+        memcpy(&newSamples, CFDataGetBytePtr(data), sizeof(UInt32));
+        // Cap at half the ring buffer so we always have read headroom.
+        const UInt32 maxSamples = (kEtherRingBufferFrames / 2) * kEtherNumChannels;
+        if (newSamples > maxSamples) newSamples = maxSamples;
+        UInt32 oldSamples = sDriverState->forwardingDelaySamples.exchange(newSamples, std::memory_order_acq_rel);
+        if (oldSamples != newSamples) {
+            // Re-anchor forwardingReadPos so the new delay takes effect.
+            // Brief glitch on change is acceptable — visualSyncSec is set-once.
+            const UInt32 reservoirSamples = 1024 * kEtherNumChannels;
+            UInt64 wp = sDriverState->ringWritePos.load(std::memory_order_acquire);
+            const UInt32 totalLag = newSamples + reservoirSamples;
+            sDriverState->forwardingReadPos.store(
+                wp > totalLag ? wp - totalLag : 0,
+                std::memory_order_release);
+            os_log(sLog, "Forwarding delay set to %u samples (~%u ms @48k)",
+                   newSamples, (newSamples / kEtherNumChannels) * 1000 / 48000);
+        }
         return kAudioHardwareNoError;
     }
 
