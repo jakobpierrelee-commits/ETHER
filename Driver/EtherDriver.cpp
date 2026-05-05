@@ -1319,6 +1319,11 @@ static OSStatus Ether_StartIO(AudioServerPlugInDriverRef driver, AudioObjectID d
         sDriverState->ioCounter = 0;
         sDriverState->ringWritePos = 0;
         sDriverState->ringReadPos = 0;
+        // Reset forwarding read pointer too — if StartForwardingAsync ran before
+        // this reset, its computed forwardingReadPos would be ahead of the now-zero
+        // writePos, causing a permanent underrun. Zeroing it here ensures the
+        // forwarding IOProc starts from the beginning of the freshly cleared ring.
+        sDriverState->forwardingReadPos = 0;
         memset(sDriverState->ringBuffer, 0, sizeof(sDriverState->ringBuffer));
         os_log(sLog, "I/O started (client %u)", clientID);
     }

@@ -305,8 +305,15 @@ struct MenuBarContent: View {
     private var footer: some View {
         HStack(spacing: 8) {
             Button {
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
+                // Defer off the current SwiftUI button-action transaction.
+                // Calling openWindow + NSApp.activate synchronously here can
+                // force the main window to lay out while the menu bar scene's
+                // own transaction is still mid-commit → graph node storage is
+                // uninitialized when assignWithCopy for EnvironmentValues runs.
+                DispatchQueue.main.async {
+                    openWindow(id: "main")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "macwindow")

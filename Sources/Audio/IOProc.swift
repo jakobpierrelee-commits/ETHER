@@ -11,10 +11,18 @@ import AudioToolbox
 final class IOProcContext {
     let ring: FloatRingBuffer
     let analyzerRing: FloatRingBuffer
+    /// Pre-allocated interleave scratch — avoids heap allocation on the realtime audio thread.
+    let scratch: UnsafeMutablePointer<Float>
+    static let scratchCapacity = 4096 * 2  // 4096 frames × 2 channels
+
     init(ring: FloatRingBuffer, analyzerRing: FloatRingBuffer) {
         self.ring = ring
         self.analyzerRing = analyzerRing
+        scratch = .allocate(capacity: IOProcContext.scratchCapacity)
+        scratch.initialize(repeating: 0, count: IOProcContext.scratchCapacity)
     }
+
+    deinit { scratch.deallocate() }
 }
 
 /// C-compatible IOProc. Reads BlackHole's input buffer (either interleaved 2ch
@@ -49,20 +57,14 @@ let etherIOProc: AudioDeviceIOProc = { _, _, inInputData, _, _, _, clientData in
               let dataR = bufR.mData?.assumingMemoryBound(to: Float.self) else { return noErr }
         let frames = Int(bufL.mDataByteSize) / MemoryLayout<Float>.size
 
-        // Interleave into a stack-allocated scratch of reasonable max size
-        // BlackHole buffers are typically 512 frames, so 4096 is plenty.
-        let maxFrames = 4096
+        let maxFrames = IOProcContext.scratchCapacity / 2  // 4096
         let copyFrames = min(frames, maxFrames)
-        var scratch = [Float](repeating: 0, count: copyFrames * 2)
         for f in 0..<copyFrames {
-            scratch[f * 2]     = dataL[f]
-            scratch[f * 2 + 1] = dataR[f]
+            ctx.scratch[f * 2]     = dataL[f]
+            ctx.scratch[f * 2 + 1] = dataR[f]
         }
-        scratch.withUnsafeBufferPointer { ptr in
-            guard let base = ptr.baseAddress else { return }
-            ctx.ring.write(src: base, count: copyFrames)
-            ctx.analyzerRing.write(src: base, count: copyFrames)
-        }
+        ctx.ring.write(src: ctx.scratch, count: copyFrames)
+        ctx.analyzerRing.write(src: ctx.scratch, count: copyFrames)
     }
     return noErr
 }

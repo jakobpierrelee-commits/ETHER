@@ -42,20 +42,36 @@ struct EtherApp: App {
                 .environmentObject(launchAtLogin)
                 .environmentObject(globalHotkeys)
                 .onAppear {
-                    appDelegate.engineManager = engineManager
-                    eqController.engine = engineManager
-                    engineManager.controller = eqController
-                    engineManager.restoreOutputIfStuckOnVirtual()
-                    if let id = profileStore.currentProfileID,
-                       let profile = profileStore.profiles.first(where: { $0.id == id }) {
-                        eqController.load(bands: profile.eqBands, masterGain: profile.masterGain, knobValues: profile.knobValues ?? [:])
+                    // Defer ALL mutations off the layout pass. onAppear fires while
+                    // NSHostingView.layout() is still on the stack. Any @Published setter
+                    // called here fires objectWillChange synchronously, scheduling a
+                    // re-render into a graph that isn't fully initialized yet →
+                    // assignWithCopy for EnvironmentValues reads garbage → EXC_BAD_ACCESS.
+                    // Task { @MainActor in } enqueues after the current synchronous stack
+                    // unwinds, so layout() has returned before we touch any state.
+                    //
+                    // Guard: skip re-wiring on subsequent appearances (menu bar "Open",
+                    // window show/hide). eqController.engine being non-nil means we've
+                    // already done first-launch setup. Re-running it would fire
+                    // objectWillChange on the live EQController and, worse, the old
+                    // restoreOutputIfStuckOnVirtual call would see the running Ether
+                    // device as "stuck virtual" and switch the system output back to
+                    // the physical device — killing the running engine mid-stream.
+                    guard eqController.engine == nil else { return }
+                    Task { @MainActor in
+                        appDelegate.engineManager = engineManager
+                        eqController.engine = engineManager
+                        engineManager.controller = eqController
+                        if let id = profileStore.currentProfileID,
+                           let profile = profileStore.profiles.first(where: { $0.id == id }) {
+                            eqController.load(bands: profile.eqBands, masterGain: profile.masterGain, knobValues: profile.knobValues ?? [:])
+                        }
+                        globalHotkeys.onBypassToggle = { eqController.toggleGlobalBypass() }
+                        globalHotkeys.onABToggle = {
+                            NotificationCenter.default.post(name: .toggleABSlots, object: nil)
+                        }
+                        globalHotkeys.install()
                     }
-                    // Wire global hotkeys to controller actions
-                    globalHotkeys.onBypassToggle = { eqController.toggleGlobalBypass() }
-                    globalHotkeys.onABToggle = {
-                        NotificationCenter.default.post(name: .toggleABSlots, object: nil)
-                    }
-                    globalHotkeys.install()
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     engineManager.spectrum.isActive = (newPhase == .active)

@@ -134,6 +134,12 @@ final class EngineManager: ObservableObject {
 
     init() {
         driverInstalled = DriverCommunicator.isDriverInstalled
+        // Launch-time safety net: if a prior crash/force-quit left the system
+        // output routed through our virtual device, restore the real device now.
+        // Must run once at init, NOT on every onAppear — when the engine is
+        // running the system output IS the Ether device by design, so calling
+        // this while running would incorrectly switch back to the physical device.
+        SystemAudioRouter.restoreOutputIfStuckOnVirtual()
         // Feed every spectrum frame into the AutoEQ rolling average
         spectrum.onFrame = { [weak self] frame in
             self?.autoEQ.absorbFrame(frame)
@@ -170,6 +176,7 @@ final class EngineManager: ObservableObject {
     }
 
     func start() {
+        stopGeneration &+= 1  // cancel any in-flight stop-fade completion
         guard let cachedOutput = selectedOutputDevice else {
             status = .error("No output device selected")
             return
@@ -192,8 +199,13 @@ final class EngineManager: ObservableObject {
         }
         status = .starting
 
-        // Remember current system default output so we can restore it on stop
-        previousDefaultOutputDeviceID = SystemAudioRouter.currentDefaultOutputDeviceID()
+        // Remember current system default output so we can restore it on stop.
+        // Only capture on the first start of a session — on a quick stop→start
+        // cycle the fade completion is cancelled so previousDefaultOutputDeviceID
+        // still holds the original real device; overwriting it would lose it.
+        if previousDefaultOutputDeviceID == nil {
+            previousDefaultOutputDeviceID = SystemAudioRouter.currentDefaultOutputDeviceID()
+        }
 
         // Persist the device UID so we can recover across crashes
         if let prevID = previousDefaultOutputDeviceID,
@@ -207,18 +219,14 @@ final class EngineManager: ObservableObject {
             logger.warning("Could not switch system output to Ether driver — user may need to do it manually")
         }
 
-        // Tell the driver to forward processed audio internally to the user's
-        // chosen physical output. Driver-internal forwarding eliminates the
-        // need for the app's HAL IOProc (and the orange mic dot it triggers).
-        DriverCommunicator.setTargetDeviceUID(outputDevice.uid)
-
-        // Push current visual-sync setting into the driver so audio is
-        // delayed to align with the naturally-lagged visualizers.
-        let delaySamples = UInt32(max(0, visualSyncSec) * 48000) * 2
-        DriverCommunicator.setForwardingDelaySamples(delaySamples)
-
         do {
             try buildAndStart(captureID: captureID, outputDevice: outputDevice)
+
+            // Tell the driver to begin forwarding only after buildAndStart has run,
+            // so Ether_StartIO has already reset ringWritePos to 0 before
+            // StartForwardingAsync computes the initial forwardingReadPos.
+            // (visualSyncSec.didSet inside buildAndStart already pushed the delay.)
+            DriverCommunicator.setTargetDeviceUID(outputDevice.uid)
 
             // Push the controller's saved profile state onto the fresh EQ node
             // so the user doesn't have to nudge a control to wake it up.
@@ -252,9 +260,15 @@ final class EngineManager: ObservableObject {
         // Tell the driver to stop forwarding before tearing anything else down
         DriverCommunicator.setTargetDeviceUID(nil)
 
+        // Capture generation so that if start() is called before this fade
+        // completes, the completion becomes a no-op (doesn't tear down the
+        // new engine that start() just built).
+        stopGeneration &+= 1
+        let gen = stopGeneration
+
         // Soft fade-out to avoid click on teardown
         fadeVolume(to: 0, duration: 0.05) { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, self.stopGeneration == gen else { return }
             self.teardown()
 
             if let previous = self.previousDefaultOutputDeviceID {
@@ -331,25 +345,26 @@ final class EngineManager: ObservableObject {
         // Restore saved visual sync setting
         self.visualSyncSec = UserDefaults.standard.float(forKey: "audio.ether.visualOffset")
 
+        // Pre-allocate source node interleave scratch — the render callback runs on
+        // the real-time audio thread where heap allocation corrupts malloc's freelist.
+        let srcBuf = UnsafeMutablePointer<Float>.allocate(capacity: 4096 * 2)
+        srcBuf.initialize(repeating: 0, count: 4096 * 2)
+        self.sourceScratch = srcBuf
+
         // Source node pulls from the ring buffer in its render callback — no queuing.
         // Ring stores interleaved; outputs deinterleaved (one buffer per channel),
         // applies stereo DSP in-place before handing off to the EQ.
         let sourceNode = AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList -> OSStatus in
             let bufferListPtr = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let numChannels = bufferListPtr.count
-            let frames = Int(frameCount)
+            let frames = min(Int(frameCount), 4096)
 
-            // Pull interleaved from ring, deinterleave into the output buffers
-            var interleaved = [Float](repeating: 0, count: frames * numChannels)
-            interleaved.withUnsafeMutableBufferPointer { ptr in
-                guard let base = ptr.baseAddress else { return }
-                _ = ring.read(dst: base, count: frames)
-            }
+            _ = ring.read(dst: srcBuf, count: frames)
 
             for ch in 0..<numChannels {
                 if let dst = bufferListPtr[ch].mData?.assumingMemoryBound(to: Float.self) {
                     for f in 0..<frames {
-                        dst[f] = interleaved[f * numChannels + ch]
+                        dst[f] = srcBuf[f * numChannels + ch]
                     }
                 }
             }
@@ -410,26 +425,27 @@ final class EngineManager: ObservableObject {
         denoise.syncInitial()
 
 
-        // Tap the EQ output for the post-EQ spectrum
+        // Tap the EQ output for the post-EQ spectrum.
+        // Pre-allocate the interleave scratch so the tap callback never allocates
+        // on the CoreAudio real-time thread (heap alloc on RT thread corrupts malloc).
         let postRing = FloatRingBuffer(capacityFrames: 8192, channelCount: 2)
         self.postAnalyzerRingBuffer = postRing
+        let tapBuf = UnsafeMutablePointer<Float>.allocate(capacity: 1024 * 2)
+        tapBuf.initialize(repeating: 0, count: 1024 * 2)
+        self.tapScratch = tapBuf
         eq.installTap(onBus: 0, bufferSize: 512, format: format) { [weak self] buffer, _ in
             guard let self = self,
                   let ring = self.postAnalyzerRingBuffer,
                   let channels = buffer.floatChannelData else { return }
-            let frames = Int(buffer.frameLength)
-            let numCh = Int(buffer.format.channelCount)
-            var interleaved = [Float](repeating: 0, count: frames * numCh)
+            let frames = min(Int(buffer.frameLength), 1024)
+            let numCh = min(Int(buffer.format.channelCount), 2)
             for ch in 0..<numCh {
                 let src = channels[ch]
                 for f in 0..<frames {
-                    interleaved[f * numCh + ch] = src[f]
+                    tapBuf[f * numCh + ch] = src[f]
                 }
             }
-            interleaved.withUnsafeBufferPointer { ptr in
-                guard let base = ptr.baseAddress else { return }
-                ring.write(src: base, count: frames)
-            }
+            ring.write(src: tapBuf, count: frames)
         }
 
         logger.log("Output engine running on \(outputDevice.name, privacy: .public)")
@@ -479,13 +495,24 @@ final class EngineManager: ObservableObject {
     }
 
     private var ioProcContextPtr: UnsafeMutableRawPointer?
+    private var tapScratch: UnsafeMutablePointer<Float>?
+    private var sourceScratch: UnsafeMutablePointer<Float>?
+    private var analyzerPreScratch: UnsafeMutablePointer<Float>?
+    private var analyzerPostScratch: UnsafeMutablePointer<Float>?
+    private var stopGeneration: Int = 0
 
     /// Feed BOTH analyzers every tick — pre-EQ for the ghost spectrum, post-EQ for the bright trace.
     private func startAnalyzerTimer() {
         analyzerTimer?.invalidate()
         let scratchSize = 8192  // enough for ~85ms at 48kHz stereo
+        if let buf = analyzerPreScratch { buf.deallocate() }
+        if let buf = analyzerPostScratch { buf.deallocate() }
         let preScratch = UnsafeMutablePointer<Float>.allocate(capacity: scratchSize)
         let postScratch = UnsafeMutablePointer<Float>.allocate(capacity: scratchSize)
+        preScratch.initialize(repeating: 0, count: scratchSize)
+        postScratch.initialize(repeating: 0, count: scratchSize)
+        analyzerPreScratch = preScratch
+        analyzerPostScratch = postScratch
         analyzerTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
 
@@ -511,6 +538,8 @@ final class EngineManager: ObservableObject {
     private func teardown() {
         analyzerTimer?.invalidate()
         analyzerTimer = nil
+        if let buf = analyzerPreScratch { buf.deallocate(); analyzerPreScratch = nil }
+        if let buf = analyzerPostScratch { buf.deallocate(); analyzerPostScratch = nil }
 
         // HAL IOProc teardown
         if let procID = captureProcID, captureDeviceID != kAudioObjectUnknown {
@@ -527,11 +556,14 @@ final class EngineManager: ObservableObject {
 
         analyzerRingBuffer = nil
 
-        // Stop the post-EQ tap before detaching the EQ node
-        if let eq = eq {
-            eq.removeTap(onBus: 0)
-        }
+        // Nil the ring first — the tap closure guards on it, so any invocation
+        // that starts after this point bails before touching tapBuf.
+        // removeTap then synchronises with any in-flight audio-thread invocation.
+        // Only after both is it safe to free the raw buffer.
         postAnalyzerRingBuffer = nil
+        if let eq = eq { eq.removeTap(onBus: 0) }
+        if let buf = tapScratch { buf.deallocate(); tapScratch = nil }
+        if let buf = sourceScratch { buf.deallocate(); sourceScratch = nil }
 
         outputEngine?.stop()
         if let eq = eq { outputEngine?.detach(eq) }

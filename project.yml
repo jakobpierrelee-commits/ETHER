@@ -27,8 +27,8 @@ targets:
         SWIFT_VERSION: "5"
         PRODUCT_BUNDLE_IDENTIFIER: audio.ether.app
         PRODUCT_NAME: Ether
-        MARKETING_VERSION: "1.2.2"
-        CURRENT_PROJECT_VERSION: "10"
+        MARKETING_VERSION: "1.2.3"
+        CURRENT_PROJECT_VERSION: "11"
         CODE_SIGN_ENTITLEMENTS: Ether.entitlements
       configs:
         Release:
@@ -68,8 +68,8 @@ targets:
         GCC_SYMBOLS_PRIVATE_EXTERN: YES
         SKIP_INSTALL: NO
         INSTALL_PATH: /Library/Audio/Plug-Ins/HAL
-        MARKETING_VERSION: "1.2.2"
-        CURRENT_PROJECT_VERSION: "10"
+        MARKETING_VERSION: "1.2.3"
+        CURRENT_PROJECT_VERSION: "11"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Driver/Info.plist
         CODE_SIGN_STYLE: Manual
